@@ -1,6 +1,6 @@
 -- ARGUS installer.
 --
---   wget -f https://cdn.jsdelivr.net/gh/happyCat-dev/ARGUS@v2.5.5/setup.lua && setup
+--   wget -f https://cdn.jsdelivr.net/gh/fowdre/ARGUS@main/setup.lua && setup
 --
 -- Note the `&&`: without it, a failed wget leaves the PREVIOUS setup.lua in
 -- place and `setup` cheerfully runs that instead, installing whatever ref that
@@ -9,7 +9,7 @@
 -- Files are fetched individually rather than as a release tarball. NIDAS pulls
 -- a third-party tar binary into /bin first because OpenOS has no archiver; with
 -- ~30 files that dependency is not worth it, and this way the installer works
--- straight from a tag with no release pipeline behind it.
+-- straight from a ref with no release pipeline behind it.
 --
 -- MIRRORS: raw.githubusercontent.com is not reliably reachable from inside
 -- OpenComputers everywhere. Its TLS handshake is dropped on some networks,
@@ -27,20 +27,20 @@ local component = require("component")
 local filesystem = require("filesystem")
 local shell = require("shell")
 
--- Override with `setup --repo=user/repo --branch=name` when installing a fork.
+-- Override with `setup --repo=user/repo --branch=name` when installing another
+-- fork.
 --
--- The default is a TAG, not a branch. jsDelivr caches a branch ref for hours
--- and does so per file, so `@main` can serve a different commit for each file
--- and every request still reports success. A tag is immutable, so every file is
--- guaranteed to come from one commit.
---
--- Use --branch=<commit-sha> to install an exact revision (also immutable).
--- Use --branch=main only to test unreleased code.
-local REPO = "happyCat-dev/ARGUS"
-local BRANCH = "v2.5.5"
+-- This fork does not publish tags yet, so it installs from main by default.
+-- Pin a commit with `setup --branch=<sha>` when reproducibility matters:
+-- jsDelivr caches a branch ref for hours and does so per file, so `@main` can
+-- serve a different commit for each file and every request still reports
+-- success. A tag or commit SHA is immutable.
+local REPO = "fowdre/ARGUS"
+local BRANCH = "main"
 
 -- What this installer expects to find on disk afterwards. Checked at the end so
--- a stale mirror is reported instead of passing as a clean install.
+-- a stale mirror is reported instead of passing as a clean install. Bump this
+-- together with version.lua when you release.
 local EXPECTED_VERSION = "2.5.5"
 
 local INSTALL_DIR = "/home/ARGUS"
@@ -221,7 +221,7 @@ end
 if branch == "main" or branch == "master" then
     print("WARNING: '" .. branch .. "' is a branch. Mirrors cache branch refs per")
     print("file, so files may arrive from different commits. Prefer a tag or a")
-    print("commit SHA: setup --branch=" .. BRANCH)
+    print("commit SHA: setup --branch=<sha>")
 end
 
 local mirror = selectMirror()

@@ -9,13 +9,17 @@
 --     has the terminal installer.
 --
 --   * The CHECK reads the moving @latest ref, which jsDelivr resolves to the
---     newest git tag. The APPLY pins to that resolved TAG (@vX.Y.Z), never a
+--     newest git tag. The APPLY prefers that resolved TAG (@vX.Y.Z), never a
 --     moving ref: jsDelivr caches a branch/moving ref per file for hours, so
 --     @latest/@main can serve files from different commits and leave a mix that
 --     only fails in-game. A tag is immutable.
 --
+--   * A fork may not publish tags, so APPLY falls back to update.FALLBACK_REF
+--     ("main") when the tag is missing. The branch fallback is best-effort:
+--     once tags exist, the immutable path wins.
+--
 --   * The actual install is delegated to setup.lua, which is downloaded fresh
---     from that tag and then run. This module deliberately does NOT keep its own
+--     from that ref and then run. This module deliberately does NOT keep its own
 --     copy of the file manifest, mirror list, or version check — setup.lua is
 --     the single source of truth, and it already preserves settings and verifies
 --     that the expected version really landed.
@@ -27,7 +31,10 @@
 
 local update = {}
 
-update.REPO = "happyCat-dev/ARGUS"
+update.REPO = "fowdre/ARGUS"
+-- Tags are preferred. The fork does not publish them yet, so the updater can
+-- still install from its main branch.
+update.FALLBACK_REF = "main"
 update.PROBE = "/tmp/argus-version"
 update.SETUP_PATH = "/home/setup.lua"
 
@@ -101,9 +108,9 @@ end
 
 -- The newest published version. Primary source is the data API (its versions[]
 -- is sorted newest-first, so the first "version" in the body is the latest);
--- the @latest file is a fallback. Either way the result is only ever compared,
--- never trusted to be newer, so a stale fallback can lose an update but can no
--- longer force a downgrade.
+-- @latest and then the fork's fallback branch are file fallbacks. Either way the
+-- result is only ever compared, never trusted to be newer, so a stale fallback
+-- can lose an update but can no longer force a downgrade.
 local function fetchLatest()
     local filesystem = require("filesystem")
 
@@ -114,9 +121,12 @@ local function fetchLatest()
         if version then return version end
     end
 
-    filesystem.remove(update.PROBE)
-    if fetch(jsdelivr("latest", "version.lua"), update.PROBE) then
-        return update.parseVersion(readProbe())
+    for _, ref in ipairs({"latest", update.FALLBACK_REF}) do
+        filesystem.remove(update.PROBE)
+        if fetch(jsdelivr(ref, "version.lua"), update.PROBE) then
+            local version = update.parseVersion(readProbe())
+            if version then return version end
+        end
     end
 
     return nil
@@ -140,11 +150,11 @@ function update.check()
     return {current = current, latest = latest, newer = update.compare(latest, current) > 0}
 end
 
--- Download the pinned setup.lua for `version`. Returns true, tag on success, or
--- false, reason. The caller then quits the app and runs setup.lua at that tag —
--- setup owns the rest (settings backup, the file list, the landed-version check).
--- Only the download happens here, so a failed fetch never leaves the caller
--- quitting into a half-updated tree.
+-- Download setup.lua for `version`. Returns true and the ref that worked, or
+-- false plus a reason. The caller then quits the app and runs setup.lua at that
+-- ref — setup owns the rest (settings backup, the file list, the landed-version
+-- check). Only the download happens here, so a failed fetch never leaves the
+-- caller quitting into a half-updated tree.
 function update.apply(version)
     local component = require("component")
     if not component.isAvailable("internet") then
@@ -152,10 +162,18 @@ function update.apply(version)
     end
 
     local tag = update.tagFor(version)
-    if not fetch(jsdelivr(tag, "setup.lua"), update.SETUP_PATH) then
-        return false, "could not download setup.lua from " .. tag
+    if fetch(jsdelivr(tag, "setup.lua"), update.SETUP_PATH) then
+        return true, tag
     end
-    return true, tag
+
+    if update.FALLBACK_REF
+        and fetch(jsdelivr(update.FALLBACK_REF, "setup.lua"), update.SETUP_PATH) then
+        return true, update.FALLBACK_REF
+    end
+
+    local tried = tag
+    if update.FALLBACK_REF then tried = tried .. " or " .. update.FALLBACK_REF end
+    return false, "could not download setup.lua from " .. tried
 end
 
 return update

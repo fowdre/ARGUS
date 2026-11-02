@@ -58,15 +58,17 @@ In the OpenOS shell:
 
 ```shell
 cd /home
-wget -f https://cdn.jsdelivr.net/gh/happyCat-dev/ARGUS@v2.5.5/setup.lua && setup
+wget -f https://cdn.jsdelivr.net/gh/fowdre/ARGUS@main/setup.lua && setup
 ```
 
 The installer walks the mirrors, downloads the files into `/home/ARGUS`, and offers to enable
 autostart. The installed version is shown in the bottom-right corner of the app. Run manually
 with `cd /home/ARGUS && init`.
 
-> **Install from a tag, not a branch.** jsDelivr caches `@main` per-file for hours and can
-> hand you files from different commits — with every request reporting success.
+> **This fork installs from `main`.** jsDelivr caches `@main` per-file for hours and can
+> hand you files from different commits — with every request reporting success. For a
+> reproducible install, use a commit SHA for both the download and the installer:
+> `wget -f https://cdn.jsdelivr.net/gh/fowdre/ARGUS@<sha>/setup.lua && setup --branch=<sha>`
 
 If it won't download, or it updated but nothing changed — the causes (TLS handshake abort,
 the OpenOS `require` cache) are broken down in [DETAILS.md](DETAILS.md).

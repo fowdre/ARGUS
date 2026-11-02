@@ -18,7 +18,7 @@ panel were rewritten from scratch.
 The name is meant to grow past energy — hence ARGUS (the hundred-eyed guard), not the old
 EMON (Energy MONitor).
 
-- Repository: `github.com/happyCat-dev/ARGUS` (formerly `sblndn20/ARGUS`, earlier `monitoring-app`)
+- Repository: `github.com/fowdre/ARGUS` (fork of `happyCat-dev/ARGUS`, formerly `sblndn20/ARGUS`, earlier `monitoring-app`)
 - Install path: `/home/ARGUS`, autostart via `/home/.shrc`
 
 ## Target versions — verify against these, not master
@@ -210,12 +210,13 @@ save HTML. For the same reason `http://` instead of `https://` is not a workarou
 `/home/setup.lua` and silently install the wrong thing.
 
 **In-app auto-update** (`core/update.lua`, Settings page): the check pulls
-`@latest/version.lua` via jsDelivr (raw is unreachable), the install is **pinned to a tag**
-`@vX.Y.Z` (a moving ref is cached by the CDN per file) and delegated to a fresh `setup.lua` —
-the module does NOT hold its own file manifest / mirrors / version check; the installer is the
-single source of truth. Download and run happen **after leaving the app** (a `pendingUpdate`
-flag → init.lua), so a large fetch doesn't hang behind a static frame. The networking branches
-aren't tested on desktop — only the pure `parseVersion`/`tagFor` are covered.
+`@latest/version.lua` via jsDelivr (raw is unreachable), the install prefers the tag
+`@vX.Y.Z` and falls back to the fork's `main` branch when no tag exists (a moving ref is
+cached by the CDN per file), then delegates to a fresh `setup.lua` — the module does NOT hold
+its own file manifest / mirrors / version check; the installer is the single source of truth.
+Download and run happen **after leaving the app** (a `pendingUpdate` flag → init.lua), so a
+large fetch doesn't hang behind a static frame. The networking branches aren't tested on
+desktop — only the pure `parseVersion`/`tagFor` are covered.
 
 ## Structure
 
