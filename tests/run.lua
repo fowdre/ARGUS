@@ -921,6 +921,54 @@ hud:update(monitor)
 near("manual resolution overrides the reported one",
     hud.panels["glasses-1"].instance.x, 1920 / 2 - 190 - 4)
 
+-- Startup settle -----------------------------------------------------------------
+--
+-- Test written with AI.
+-- OpenComputers runs the Lua machine on its own thread, and at server boot it
+-- can reach a glasses widget call before the server thread has loaded the chunk
+-- the glasses stand in. OpenGlasses resolves widgets through World.getTileEntity,
+-- so that miss becomes an off-thread chunk load; OC tile entities (a keyboard is
+-- enough) fail their NBT read there and Hodgepodge aborts the load with a FATAL.
+-- The HUD must stay off the glasses until the server has won that race.
+
+fakeComponents["glasses-settle"] = fakeGlasses()
+fakeTypes["glasses-settle"] = "glasses"
+
+clock = 0
+local settling = arHud.new(hudConfig)
+clock = 2
+settling:update(monitor)
+eq("hud waits out the startup settle window", settling.panels["glasses-settle"], nil)
+
+clock = 3
+settling:update(monitor)
+check("hud starts once the settle window passes", settling.panels["glasses-settle"] ~= nil)
+
+-- Do not leave the extra glasses behind for the tests that follow.
+fakeComponents["glasses-settle"] = nil
+fakeTypes["glasses-settle"] = nil
+
+-- A clear that failed must not be recorded as done. Its usual failure is the
+-- chunk not being loaded yet, and treating it as complete would leave the
+-- objects from a half-built panel on the glasses forever.
+
+local flaky = fakeGlasses()
+local failFirstClear = true
+flaky.removeAll = method(function()
+    if failFirstClear then
+        failFirstClear = false
+        error("chunk not loaded")
+    end
+    flaky.objects = {}
+end)
+
+local retryHud = arHud.new(hudConfig)
+clock = 100
+retryHud:clearOnce("glasses-flaky", flaky)
+eq("a failed startup clear is retried", retryHud.cleared["glasses-flaky"], false)
+retryHud:clearOnce("glasses-flaky", flaky)
+eq("a successful startup clear is remembered", retryHud.cleared["glasses-flaky"], true)
+
 -- Machine names ------------------------------------------------------------------
 --
 -- getName() can answer with an unlocalized key instead of a name: a live LSC
@@ -1756,6 +1804,7 @@ do
     settings.craft.anchor = "top-left"
     settings.craft.rows = 3
 
+    clock = 9003                       -- past the HUD's startup settle window
     cardHud:update(monitor, craftMonitor)
     check("hud builds the crafting card", cardHud.craftPanels["glasses-1"] ~= nil)
     eq("the crafting card does not need the energy card", cardHud.panels["glasses-1"], nil)
@@ -1919,6 +1968,7 @@ do
     settings.stock.anchor = "bottom-left"
     settings.stock.rows = 5
 
+    clock = 12003                      -- past the HUD's startup settle window
     scHud:update(scMonitor, nil, scStock)
     check("hud builds the stock card", scHud.stockPanels["glasses-1"] ~= nil)
     eq("the stock card does not need the energy card", scHud.panels["glasses-1"], nil)

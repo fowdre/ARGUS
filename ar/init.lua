@@ -41,6 +41,13 @@ hud.__index = hud
 -- come and go between frames.
 local GLASSES_RESCAN_INTERVAL = 2
 
+-- How long to wait after ARGUS starts before AR is enabled.
+--
+-- Deliberately relative to program start, not computer uptime: uptime is saved
+-- with the machine and resumes on a server restart, so it cannot identify a
+-- fresh boot. The cost is a few seconds of blank HUD on a manual start.
+local HUD_SETTLE_SECONDS = 3
+
 function hud.new(config)
     return setmetatable({
         config = config,
@@ -59,6 +66,9 @@ function hud.new(config)
         -- authoritative: it is the space hud_click coordinates arrive in, so the
         -- hit boxes only line up if the card is laid out in the same one.
         viewport = {},
+        -- Time while no AR glasses may be interacted with; see HUD_SETTLE_SECONDS.
+        -- Avoids race conditions when loading chunks.
+        readyAt = computer.uptime() + HUD_SETTLE_SECONDS,
     }, hud)
 end
 
@@ -126,8 +136,7 @@ end
 -- are about to recreate anyway.
 function hud:clearOnce(address, proxy)
     if self.cleared[address] or not self.config.clearGlassesOnStart then return end
-    self.cleared[address] = true
-    pcall(ar.clear, proxy)
+    self.cleared[address] = pcall(ar.clear, proxy)
 end
 
 function hud:drop(address)
@@ -260,6 +269,9 @@ end
 
 function hud:update(monitor, craftMonitor, stockMonitor)
     local now = computer.uptime()
+
+    if now < self.readyAt then return end
+
     local seen = {}
 
     for _, address in ipairs(self:glassesList(now)) do
