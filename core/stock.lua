@@ -199,7 +199,7 @@ end
 -- a remote buffer have no local ME network of their own, so they get nothing.
 function stock:rowsForView(view)
     if not view or not view.address or view.remote then return {} end
-    if view.kind == "wireless" or view.kind == "aggregate" then return {} end
+    if view.kind == "aggregate" then return {} end
     for _, entry in ipairs(self.config.buffers or {}) do
         if entry.address == view.address then return self:rowsFor(entry) end
     end
