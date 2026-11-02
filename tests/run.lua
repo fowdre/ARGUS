@@ -684,6 +684,8 @@ eq("missing component yields a MISSING state", monitor:get("gone").state, states
 
 local configuration = require("config")
 local arPanel = require("ar.panel")
+local arCraft = require("ar.craft")
+local arStock = require("ar.stock")
 
 local theme = configuration.defaults().theme
 local settings = configuration.glassesDefaults()
@@ -810,6 +812,99 @@ local nudgedPanel = arPanel.new(anchored, nudged, theme, resolution)
 near("offsetX shifts the card right", nudgedPanel.x, 4 + 12)
 near("offsetY shifts the card down", nudgedPanel.y, 4 + 20)
 
+-- AR card size -----------------------------------------------------------------
+--
+-- Test written with AI.
+--
+-- One per-glasses percentage shrinks every card, geometry and text together.
+-- The anchors and nudge stay in glasses pixels, and the hit boxes are built from
+-- the same scaled values as the drawing, so clicks still land at every size.
+
+do
+    eq("the card size defaults to 100%", configuration.glassesDefaults().panelScale, 100)
+
+    -- An old settings file has no panelScale; glassesFor's defaults merge adds it.
+    local oldData = {glasses = {["old-glasses"] = {compact = false}}}
+    eq("an old glasses entry gains the default card size",
+        configuration.glassesFor(oldData, "old-glasses").panelScale, 100)
+
+    -- 100% must be exactly the original layout.
+    local full = configuration.glassesDefaults()
+    local fullCard = arPanel.new(fakeGlasses(), full, theme, viewport)
+    eq("100% keeps the original card width", fullCard.width, 190)
+    eq("100% keeps the original card height", fullCard.height, 34)
+    near("100% keeps the original bar inset", fullCard.barWidth, 190 - 16)
+    near("100% keeps the original bar y", fullCard.barY - fullCard.y, 14)
+    eq("100% keeps the original text scale", fullCard.dynamic.name.scale, 0.7)
+    eq("100% keeps the original text x", fullCard.dynamic.name.position[1] - fullCard.x, 32)
+    eq("100% still maps the taller prev hit box",
+        fullCard:hitTest(fullCard.x + 5, fullCard.y + 8), "prev")
+    fullCard:remove()
+
+    -- 50% halves every dimension, including the text and the hit boxes.
+    local half = configuration.glassesDefaults()
+    half.panelScale = 50
+    local halfCard = arPanel.new(fakeGlasses(), half, theme, viewport)
+    eq("50% halves the card width", halfCard.width, 95)
+    eq("50% halves the card height", halfCard.height, 17)
+    near("50% halves the bar inset", halfCard.barWidth, 95 - 8)
+    near("50% halves the bar y", halfCard.barY - halfCard.y, 7)
+    near("50% halves the text scale", halfCard.dynamic.name.scale, 0.35)
+    near("50% halves the text x", halfCard.dynamic.name.position[1] - halfCard.x, 16)
+    eq("50% still maps the prev button", halfCard:hitTest(halfCard.x + 3, halfCard.y + 2), "prev")
+    eq("50% still maps the next button", halfCard:hitTest(halfCard.x + 9, halfCard.y + 2), "next")
+    eq("50% still maps the cycle region", halfCard:hitTest(halfCard.x + 20, halfCard.y + 2), "cycle")
+    eq("50% shrinks the hit box with the card",
+        halfCard:hitTest(halfCard.x + 5, halfCard.y + 8), nil)
+    halfCard:remove()
+
+    -- Out-of-range values from a hand-edited config clamp instead of vanishing.
+    local tiny = configuration.glassesDefaults()
+    tiny.panelScale = 1
+    local tinyCard = arPanel.new(fakeGlasses(), tiny, theme, viewport)
+    eq("a too-small card size clamps to 10%", tinyCard.width, 19)
+    tinyCard:remove()
+
+    local huge = configuration.glassesDefaults()
+    huge.panelScale = 400
+    local hugeCard = arPanel.new(fakeGlasses(), huge, theme, viewport)
+    eq("a too-large card size clamps to 100%", hugeCard.width, 190)
+    hugeCard:remove()
+
+    -- Anchoring uses the scaled card, so a smaller bottom-corner card still
+    -- stays fully inside the viewport.
+    local shrunk = configuration.glassesDefaults()
+    shrunk.panelScale = 50
+    shrunk.anchor = "bottom-right"
+    local shrunkCard = arPanel.new(fakeGlasses(), shrunk, theme, resolution)
+    near("a scaled bottom-right card is inset by its scaled width",
+        shrunkCard.x, resolution[1] - 95 - 4)
+    check("a scaled bottom-right card stays on screen",
+        shrunkCard.y + shrunkCard.height <= resolution[2])
+    shrunkCard:remove()
+
+    -- The crafting and stock cards take the same scale from the manager.
+    local craftSettings = configuration.craftCardDefaults()
+    craftSettings.rows = 3
+    local craftCard = arCraft.new(fakeGlasses(), craftSettings, theme, viewport, 50)
+    eq("50% halves the crafting card width", craftCard.width, 115)
+    eq("50% halves the crafting card height", craftCard.height, (13 + 3 * 15 + 3) / 2)
+    near("50% halves the crafting text scale", craftCard.dynamic.title.scale, 0.35)
+    eq("50% keeps the crafting fold hit box aligned",
+        craftCard:hitTest(craftCard.x + 4, craftCard.y + 2), "craft:collapse")
+    craftCard:remove()
+
+    local stockSettings = configuration.stockCardDefaults()
+    stockSettings.rows = 5
+    local stockCard = arStock.new(fakeGlasses(), stockSettings, theme, viewport, 50)
+    eq("50% halves the stock card width", stockCard.width, 78)
+    eq("50% halves the stock card height", stockCard.height, (13 + 5 * 9 + 3) / 2)
+    near("50% halves the stock text scale", stockCard.dynamic.title.scale, 0.35)
+    eq("50% keeps the stock fold hit box aligned",
+        stockCard:hitTest(stockCard.x + 4, stockCard.y + 2), "stock:collapse")
+    stockCard:remove()
+end
+
 -- AR manager -------------------------------------------------------------------
 
 local arHud = require("ar")
@@ -862,6 +957,14 @@ glassesSettings.compact = false
 glassesSettings.anchor = "top-left"
 glassesSettings.source = nil -- the aggregate
 hud:update(monitor)
+
+glassesSettings.panelScale = 50
+hud:update(monitor)
+near("hud rebuilds the card when its size changes",
+    hud.panels["glasses-1"].instance.width, 95)
+glassesSettings.panelScale = 100
+hud:update(monitor)
+near("hud restores the card at 100%", hud.panels["glasses-1"].instance.width, 190)
 
 local card = hud.panels["glasses-1"].instance
 eq("‹ maps to prev", card:hitTest(card.x + 8, card.y + 5), "prev")
@@ -924,6 +1027,7 @@ near("manual resolution overrides the reported one",
 -- Startup settle -----------------------------------------------------------------
 --
 -- Test written with AI.
+--
 -- OpenComputers runs the Lua machine on its own thread, and at server boot it
 -- can reach a glasses widget call before the server thread has loaded the chunk
 -- the glasses stand in. OpenGlasses resolves widgets through World.getTileEntity,
@@ -1903,6 +2007,15 @@ do
     cardHud:update(monitor, craftMonitor)
     card = cardHud.craftPanels["glasses-1"].instance
 
+    -- The glasses-level size applies to this card too, and changing it rebuilds.
+    settings.panelScale = 50
+    cardHud:update(monitor, craftMonitor)
+    near("the crafting card follows the glasses size",
+        cardHud.craftPanels["glasses-1"].instance.width, 115)
+    settings.panelScale = 100
+    cardHud:update(monitor, craftMonitor)
+    card = cardHud.craftPanels["glasses-1"].instance
+
     settings.craft.enabled = false
     cardHud:update(monitor, craftMonitor)
     eq("hud drops the crafting card when disabled", cardHud.craftPanels["glasses-1"], nil)
@@ -2030,6 +2143,15 @@ do
     check("the = key unfolds it again",
         scHud:handleSignal(scMonitor, "hud_keyboard", "Tester", 29, 13))
     check("the = key cleared the stock collapsed flag", not settings.stock.collapsed)
+    scHud:update(scMonitor, nil, scStock)
+    card = scHud.stockPanels["glasses-1"].instance
+
+    -- The glasses-level size applies to this card too, and changing it rebuilds.
+    settings.panelScale = 50
+    scHud:update(scMonitor, nil, scStock)
+    near("the stock card follows the glasses size",
+        scHud.stockPanels["glasses-1"].instance.width, 78)
+    settings.panelScale = 100
     scHud:update(scMonitor, nil, scStock)
     card = scHud.stockPanels["glasses-1"].instance
 

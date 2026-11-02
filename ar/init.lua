@@ -100,7 +100,7 @@ end
 -- Any change here means the existing objects are wrong and must be recreated.
 local function signature(settings, resolution)
     return table.concat({
-        tostring(settings.enabled), tostring(settings.compact),
+        tostring(settings.enabled), tostring(settings.compact), tostring(settings.panelScale or 100),
         tostring(settings.anchor), tostring(settings.offsetX), tostring(settings.offsetY),
         tostring(resolution[1]), tostring(resolution[2]),
     }, "|")
@@ -110,9 +110,10 @@ end
 -- are built once at construction and never grow — changing the count means new
 -- objects. `stalledOnly` is NOT: it filters what the existing rows show, so it
 -- applies live without touching the glasses.
-local function craftSignature(settings, resolution)
+local function craftSignature(settings, resolution, panelScale)
     return table.concat({
         tostring(settings.enabled), tostring(settings.rows), tostring(settings.collapsed),
+        tostring(panelScale or 100),
         tostring(settings.anchor), tostring(settings.offsetX), tostring(settings.offsetY),
         tostring(resolution[1]), tostring(resolution[2]),
     }, "|")
@@ -121,9 +122,10 @@ end
 -- The stock card's rebuild trigger. Same shape as the crafting card's: `rows` is
 -- in here because the row objects are built once, but WHICH buffer's items show
 -- is not — that follows the displayed view live, without touching the glasses.
-local function stockSignature(settings, resolution)
+local function stockSignature(settings, resolution, panelScale)
     return table.concat({
         tostring(settings.enabled), tostring(settings.rows), tostring(settings.collapsed),
+        tostring(panelScale or 100),
         tostring(settings.anchor), tostring(settings.offsetX), tostring(settings.offsetY),
         tostring(resolution[1]), tostring(resolution[2]),
     }, "|")
@@ -199,7 +201,7 @@ end
 function hud:updateCraft(address, settings, resolution, craftMonitor)
     local cardSettings = settings.craft or {}
     local current = self.craftPanels[address]
-    local wanted = craftSignature(cardSettings, resolution)
+    local wanted = craftSignature(cardSettings, resolution, settings.panelScale)
 
     if current and current.signature ~= wanted then
         self:dropCraft(address)
@@ -217,7 +219,7 @@ function hud:updateCraft(address, settings, resolution, craftMonitor)
         if not (ok and proxy) then return end
         self:clearOnce(address, proxy)
         local built, instance =
-            pcall(arCraft.new, proxy, cardSettings, self.config.theme, resolution)
+            pcall(arCraft.new, proxy, cardSettings, self.config.theme, resolution, settings.panelScale)
         if not built then return end
         self.craftPanels[address] = {instance = instance, proxy = proxy, signature = wanted}
         current = self.craftPanels[address]
@@ -238,7 +240,7 @@ end
 function hud:updateStock(address, settings, resolution, stockMonitor, view)
     local cardSettings = settings.stock or {}
     local current = self.stockPanels[address]
-    local wanted = stockSignature(cardSettings, resolution)
+    local wanted = stockSignature(cardSettings, resolution, settings.panelScale)
 
     if current and current.signature ~= wanted then
         self:dropStock(address)
@@ -256,7 +258,7 @@ function hud:updateStock(address, settings, resolution, stockMonitor, view)
         if not (ok and proxy) then return end
         self:clearOnce(address, proxy)
         local built, instance =
-            pcall(arStock.new, proxy, cardSettings, self.config.theme, resolution)
+            pcall(arStock.new, proxy, cardSettings, self.config.theme, resolution, settings.panelScale)
         if not built then return end
         self.stockPanels[address] = {instance = instance, proxy = proxy, signature = wanted}
         current = self.stockPanels[address]

@@ -41,8 +41,8 @@ panel.ANCHORS = {
     "manual",
 }
 
-local function height(rows)
-    return HEADER + rows * ROW_HEIGHT + PADDING
+local function height(rows, scale)
+    return (HEADER + rows * ROW_HEIGHT + PADDING) * (scale or 1)
 end
 
 panel.height = height
@@ -70,14 +70,16 @@ end
 
 panel.anchorPosition = anchorPosition
 
-function panel.new(glasses, settings, theme, resolution)
+function panel.new(glasses, settings, theme, resolution, panelScale)
     -- Collapsed the card is just its header strip: zero rows, header height. The
     -- toggle changes geometry, so it rides the rebuild signature (see ar/init).
     local collapsed = settings.collapsed and true or false
     local rows = collapsed and 0 or math.max(1, math.min(MAX_ROWS, math.floor(settings.rows or MAX_ROWS)))
-    local cardHeight = collapsed and (HEADER + PADDING) or height(rows)
+    local scale = ar.hudScale(panelScale)
+    local width = WIDTH * scale
+    local cardHeight = collapsed and ((HEADER + PADDING) * scale) or height(rows, scale)
 
-    local x, y = anchorPosition(settings.anchor, resolution, WIDTH, cardHeight)
+    local x, y = anchorPosition(settings.anchor, resolution, width, cardHeight)
     x = x + (settings.offsetX or 0)
     y = y + (settings.offsetY or 0)
 
@@ -85,7 +87,7 @@ function panel.new(glasses, settings, theme, resolution)
         glasses = glasses,
         theme = theme,
         rows = rows,
-        width = WIDTH,
+        width = width,
         height = cardHeight,
         x = x,
         y = y,
@@ -98,37 +100,37 @@ function panel.new(glasses, settings, theme, resolution)
 
     -- Chrome. A green stripe sets this card apart from the energy (primary) and
     -- crafting (accent) ones at a glance when more than one is worn.
-    table.insert(self.static, ar.rectangle(glasses, {x, y}, WIDTH, cardHeight, theme.background, 0.55))
-    table.insert(self.static, ar.rectangle(glasses, {x, y}, 2, cardHeight, palette.green, 0.9))
+    table.insert(self.static, ar.rectangle(glasses, {x, y}, width, cardHeight, theme.background, 0.55))
+    table.insert(self.static, ar.rectangle(glasses, {x, y}, 2 * scale, cardHeight, palette.green, 0.9))
 
     -- Fold toggle, then the card name and the buffer it is showing. The glyph is
     -- the key that folds this card ("="), so it doubles as the hotkey hint —
     -- distinct from the crafting card's "-", and shown right on the card.
-    self.dynamic.collapse = ar.text(glasses, "=", {x + 6, y + 3}, palette.green, 0.8)
-    self.dynamic.title = ar.text(glasses, "ME STOCK", {x + 15, y + 3}, palette.green, 0.7)
-    self.dynamic.buffer = ar.text(glasses, "", {x + 60, y + 3}, theme.muted, 0.6)
+    self.dynamic.collapse = ar.text(glasses, "=", {x + 6 * scale, y + 3 * scale}, palette.green, 0.8 * scale)
+    self.dynamic.title = ar.text(glasses, "ME STOCK", {x + 15 * scale, y + 3 * scale}, palette.green, 0.7 * scale)
+    self.dynamic.buffer = ar.text(glasses, "", {x + 60 * scale, y + 3 * scale}, theme.muted, 0.6 * scale)
 
     if collapsed then
         -- The whole strip is the expand button, so a folded card is easy to hit.
-        self:addRegion(x, y, WIDTH, HEADER, "stock:collapse")
+        self:addRegion(x, y, width, HEADER * scale, "stock:collapse")
         return self
     end
 
-    self:addRegion(x + 4, y, 11, 12, "stock:collapse")
+    self:addRegion(x + 4 * scale, y, 11 * scale, 12 * scale, "stock:collapse")
 
     -- The count column is left of the label so the numbers line up down the card;
     -- item names are ragged and would push the counts around otherwise.
     for i = 1, rows do
-        local rowY = y + HEADER + (i - 1) * ROW_HEIGHT
+        local rowY = y + HEADER * scale + (i - 1) * ROW_HEIGHT * scale
         self.rowObjects[i] = {
-            count = ar.text(glasses, "", {x + 7, rowY}, palette.text, 0.7),
-            label = ar.text(glasses, "", {x + 52, rowY}, palette.text, 0.7),
+            count = ar.text(glasses, "", {x + 7 * scale, rowY}, palette.text, 0.7 * scale),
+            label = ar.text(glasses, "", {x + 52 * scale, rowY}, palette.text, 0.7 * scale),
         }
     end
 
     -- Shown instead of the rows when there is nothing to list, so an enabled card
     -- is never a blank rectangle with no explanation.
-    self.dynamic.empty = ar.text(glasses, "", {x + 7, y + HEADER + 1}, theme.muted, 0.6)
+    self.dynamic.empty = ar.text(glasses, "", {x + 7 * scale, y + HEADER * scale + 1 * scale}, theme.muted, 0.6 * scale)
 
     return self
 end

@@ -50,8 +50,8 @@ local STATE_COLORS = {
     [craftLib.MISSING]  = palette.red,
 }
 
-local function height(rows)
-    return HEADER + rows * ROW_HEIGHT + PADDING
+local function height(rows, scale)
+    return (HEADER + rows * ROW_HEIGHT + PADDING) * (scale or 1)
 end
 
 panel.height = height
@@ -90,16 +90,18 @@ local function itemLabel(item, width)
     return prefix .. text.fit(item.label or "?", width)
 end
 
-function panel.new(glasses, settings, theme, resolution)
+function panel.new(glasses, settings, theme, resolution, panelScale)
     -- Collapsed the card is just the header strip; the row count (and so the
     -- objects built below) drops to zero and the height to the header alone.
     -- Because this changes geometry, the toggle rides the card's rebuild
     -- signature rather than being flipped live.
     local collapsed = settings.collapsed and true or false
     local rows = collapsed and 0 or math.max(1, math.min(8, math.floor(settings.rows or 4)))
-    local cardHeight = collapsed and (HEADER + PADDING) or height(rows)
+    local scale = ar.hudScale(panelScale)
+    local width = WIDTH * scale
+    local cardHeight = collapsed and ((HEADER + PADDING) * scale) or height(rows, scale)
 
-    local x, y = anchorPosition(settings.anchor, resolution, WIDTH, cardHeight)
+    local x, y = anchorPosition(settings.anchor, resolution, width, cardHeight)
     x = x + (settings.offsetX or 0)
     y = y + (settings.offsetY or 0)
 
@@ -107,7 +109,7 @@ function panel.new(glasses, settings, theme, resolution)
         glasses = glasses,
         theme = theme,
         rows = rows,
-        width = WIDTH,
+        width = width,
         height = cardHeight,
         x = x,
         y = y,
@@ -121,51 +123,51 @@ function panel.new(glasses, settings, theme, resolution)
 
     -- Chrome. The accent stripe distinguishes this card from the energy one at a
     -- glance, which matters when both are on screen.
-    table.insert(self.static, ar.rectangle(glasses, {x, y}, WIDTH, cardHeight, theme.background, 0.55))
-    table.insert(self.static, ar.rectangle(glasses, {x, y}, 2, cardHeight, theme.accent, 0.9))
+    table.insert(self.static, ar.rectangle(glasses, {x, y}, width, cardHeight, theme.background, 0.55))
+    table.insert(self.static, ar.rectangle(glasses, {x, y}, 2 * scale, cardHeight, theme.accent, 0.9))
 
     -- Fold toggle, first in the header. The glyph is the very key that folds this
     -- card ("-"), so it doubles as the hotkey hint — the two cards fold on
     -- different keys, and this is what makes that discoverable from the card
     -- itself. Clicking it toggles either way; the card's height shows the state.
-    self.dynamic.collapse = ar.text(glasses, "-", {x + 6, y + 3}, theme.accent, 0.8)
-    self.dynamic.title = ar.text(glasses, "CRAFTING", {x + 15, y + 3}, theme.accent, 0.7)
-    self.dynamic.summary = ar.text(glasses, "", {x + 70, y + 3}, theme.muted, 0.6)
+    self.dynamic.collapse = ar.text(glasses, "-", {x + 6 * scale, y + 3 * scale}, theme.accent, 0.8 * scale)
+    self.dynamic.title = ar.text(glasses, "CRAFTING", {x + 15 * scale, y + 3 * scale}, theme.accent, 0.7 * scale)
+    self.dynamic.summary = ar.text(glasses, "", {x + 70 * scale, y + 3 * scale}, theme.muted, 0.6 * scale)
 
     if collapsed then
         -- The whole strip is the expand button, so a folded card is easy to hit.
-        self:addRegion(x, y, WIDTH, HEADER, "craft:collapse")
+        self:addRegion(x, y, width, HEADER * scale, "craft:collapse")
         return self
     end
 
-    self:addRegion(x + 4, y, 11, 12, "craft:collapse")
+    self:addRegion(x + 4 * scale, y, 11 * scale, 12 * scale, "craft:collapse")
 
     -- Paging arrows, for when more CPUs are busy than there are rows. Hit boxes
     -- are deliberately larger than the glyphs: aimed with a free cursor over a
     -- moving game view.
-    self.dynamic.prev = ar.text(glasses, "‹", {x + WIDTH - 26, y + 2}, theme.accent, 0.8)
-    self.dynamic.next = ar.text(glasses, "›", {x + WIDTH - 14, y + 2}, theme.accent, 0.8)
-    self:addRegion(x + WIDTH - 29, y, 12, 12, "craft:prev")
-    self:addRegion(x + WIDTH - 17, y, 12, 12, "craft:next")
+    self.dynamic.prev = ar.text(glasses, "‹", {x + width - 26 * scale, y + 2 * scale}, theme.accent, 0.8 * scale)
+    self.dynamic.next = ar.text(glasses, "›", {x + width - 14 * scale, y + 2 * scale}, theme.accent, 0.8 * scale)
+    self:addRegion(x + width - 29 * scale, y, 12 * scale, 12 * scale, "craft:prev")
+    self:addRegion(x + width - 17 * scale, y, 12 * scale, 12 * scale, "craft:next")
 
     -- Clicking the header (between the fold toggle and the arrows) toggles the
     -- stalled-only filter, mirroring how the energy card's name toggles cycling.
-    self:addRegion(x + 15, y, WIDTH - 47, 12, "craft:filter")
+    self:addRegion(x + 15 * scale, y, width - 47 * scale, 12 * scale, "craft:filter")
 
     for i = 1, rows do
-        local rowY = y + HEADER + (i - 1) * ROW_HEIGHT
+        local rowY = y + HEADER * scale + (i - 1) * ROW_HEIGHT * scale
         self.rowObjects[i] = {
             -- Line 1: the ordered item and the job state.
-            output = ar.text(glasses, "", {x + 7, rowY}, palette.text, 0.7),
-            state = ar.text(glasses, "", {x + WIDTH - 62, rowY}, palette.muted, 0.6),
+            output = ar.text(glasses, "", {x + 7 * scale, rowY}, palette.text, 0.7 * scale),
+            state = ar.text(glasses, "", {x + width - 62 * scale, rowY}, palette.muted, 0.6 * scale),
             -- Line 2: where the chain is right now.
-            chain = ar.text(glasses, "", {x + 7, rowY + 8}, theme.muted, 0.6),
+            chain = ar.text(glasses, "", {x + 7 * scale, rowY + 8 * scale}, theme.muted, 0.6 * scale),
         }
     end
 
     -- Shown instead of the rows when there is nothing to list, so an enabled
     -- card is never a blank rectangle with no explanation.
-    self.dynamic.empty = ar.text(glasses, "", {x + 7, y + HEADER + 2}, theme.muted, 0.6)
+    self.dynamic.empty = ar.text(glasses, "", {x + 7 * scale, y + HEADER * scale + 2 * scale}, theme.muted, 0.6 * scale)
 
     return self
 end

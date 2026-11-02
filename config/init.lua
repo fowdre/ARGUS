@@ -213,6 +213,7 @@ function config.glassesDefaults()
         cycle = false,
         cycleInterval = 8,
         compact = false,
+        panelScale = 100,
 
         -- The crafting card, sharing these glasses with the energy card.
         craft = config.craftCardDefaults(),

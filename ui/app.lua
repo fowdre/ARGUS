@@ -487,6 +487,8 @@ local INTERVALS = {4, 8, 15, 30}
 local CRAFT_ROWS = {2, 3, 4, 5, 6, 8}
 -- The stock card can never show more than the watchlist cap of 5.
 local STOCK_ROWS = {2, 3, 4, 5}
+-- AR glasses card size. Goes from 10% to 100%, with 10% steps.
+local PANEL_SIZES = {100, 90, 80, 70, 60, 50, 40, 30, 20, 10}
 
 function app:nextSource(settings)
     local views = self.monitor:list()
@@ -629,6 +631,13 @@ function app:drawGlasses(width, rows, theme)
     x = x + widgets.button(x, row, settings.compact and "compact" or "full", theme, function()
         settings.compact = not settings.compact self.dirty = true
     end, nil, settings.compact) + 2
+
+    local panelSize = tonumber(settings.panelScale) or 100
+    panelSize = math.max(10, math.min(100, panelSize))
+    x = x + widgets.button(x, row, "size " .. panelSize .. "%", theme, function()
+        settings.panelScale = cycleValue(PANEL_SIZES, panelSize)
+        self.dirty = true
+    end, nil, panelSize < 100) + 2
 
     -- Viewport comes from the glasses_on signal; the manual GUI scale is only a
     -- fallback for before they have been worn.

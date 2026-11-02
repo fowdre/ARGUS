@@ -22,6 +22,13 @@ function ar.setLegacyScaling(enabled)
     legacyScaling = enabled and true or false
 end
 
+function ar.hudScale(percent)
+    percent = tonumber(percent) or 100
+    if percent < 10 then percent = 10 end
+    if percent > 100 then percent = 100 end
+    return percent / 100
+end
+
 -- Vertices are laid out TL, BL, BR, TR — callers resize a bar by moving
 -- vertices 3 and 4.
 function ar.rectangle(glasses, v1, width, height, color, alpha)

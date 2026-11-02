@@ -54,12 +54,13 @@ local STATE_COLORS = {
     [states.MISSING] = palette.red,
 }
 
-local function anchorPosition(anchor, resolution, width)
+local function anchorPosition(anchor, resolution, width, cardHeight)
     local left = MARGIN
     local center = (resolution[1] - width) / 2
     local right = resolution[1] - width - MARGIN
     local top = MARGIN
-    local bottom = resolution[2] - HEIGHT - MARGIN
+
+    local bottom = resolution[2] - (cardHeight or HEIGHT) - MARGIN
 
     local positions = {
         ["top-left"]      = {left, top},
@@ -89,10 +90,12 @@ end
 -- space hud_click reports its coordinates in, which is what makes the hit boxes
 -- below line up without any conversion.
 function panel.new(glasses, settings, theme, resolution)
-    local width = settings.compact and COMPACT_WIDTH or WIDTH
+    local scale = ar.hudScale(settings.panelScale)
+    local width = (settings.compact and COMPACT_WIDTH or WIDTH) * scale
+    local cardHeight = HEIGHT * scale
 
     -- Snap to the chosen corner, then apply the user's nudge on top.
-    local x, y = anchorPosition(settings.anchor, resolution, width)
+    local x, y = anchorPosition(settings.anchor, resolution, width, cardHeight)
     x = x + (settings.offsetX or 0)
     y = y + (settings.offsetY or 0)
 
@@ -100,46 +103,50 @@ function panel.new(glasses, settings, theme, resolution)
         glasses = glasses,
         theme = theme,
         width = width,
+        height = cardHeight,
         x = x,
         y = y,
         static = {},
         dynamic = {},
         regions = {},
         lastColor = nil,
+        scale = scale,
+        barHeight = 4 * scale,
+        headWidth = 2 * scale,
     }, panel)
 
-    local barY = y + 14
-    local barWidth = width - 16
+    local barY = y + 14 * scale
+    local barWidth = width - 16 * scale
 
     -- Chrome
-    table.insert(self.static, ar.rectangle(glasses, {x, y}, width, HEIGHT, theme.background, 0.55))
-    table.insert(self.static, ar.rectangle(glasses, {x, y}, 2, HEIGHT, theme.primary, 0.9))
-    table.insert(self.static, ar.rectangle(glasses, {x + 8, barY}, barWidth, 4, theme.panel, 0.8))
+    table.insert(self.static, ar.rectangle(glasses, {x, y}, width, cardHeight, theme.background, 0.55))
+    table.insert(self.static, ar.rectangle(glasses, {x, y}, 2 * scale, cardHeight, theme.primary, 0.9))
+    table.insert(self.static, ar.rectangle(glasses, {x + 8 * scale, barY}, barWidth, self.barHeight, theme.panel, 0.8))
 
     -- Source switcher. Hit boxes are deliberately larger than the glyphs: these
     -- are aimed with a free cursor over a busy game view.
-    local buttonY = y + 3
-    table.insert(self.static, ar.text(glasses, "‹", {x + 7, buttonY}, theme.primary, 0.9))
-    table.insert(self.static, ar.text(glasses, "›", {x + 19, buttonY}, theme.primary, 0.9))
-    self:addRegion(x + 4, y + 1, 12, 12, "prev")
-    self:addRegion(x + 16, y + 1, 12, 12, "next")
+    local buttonY = y + 3 * scale
+    table.insert(self.static, ar.text(glasses, "‹", {x + 7 * scale, buttonY}, theme.primary, 0.9 * scale))
+    table.insert(self.static, ar.text(glasses, "›", {x + 19 * scale, buttonY}, theme.primary, 0.9 * scale))
+    self:addRegion(x + 4 * scale, y + 1 * scale, 12 * scale, 12 * scale, "prev")
+    self:addRegion(x + 16 * scale, y + 1 * scale, 12 * scale, 12 * scale, "next")
 
     -- Live fields
-    self.dynamic.name = ar.text(glasses, "", {x + 32, y + 4}, theme.muted, 0.7)
-    self.dynamic.percent = ar.text(glasses, "", {x + width - 44, buttonY}, theme.primary, 1.0)
-    self.dynamic.bar = ar.rectangle(glasses, {x + 8, barY}, 1, 4, theme.primary, 1.0)
+    self.dynamic.name = ar.text(glasses, "", {x + 32 * scale, y + 4 * scale}, theme.muted, 0.7 * scale)
+    self.dynamic.percent = ar.text(glasses, "", {x + width - 44 * scale, buttonY}, theme.primary, 1.0 * scale)
+    self.dynamic.bar = ar.rectangle(glasses, {x + 8 * scale, barY}, scale, self.barHeight, theme.primary, 1.0)
     -- A brighter cap on the leading edge. Without it the fill just stops dead
     -- and the bar reads as clipped rather than as a level.
-    self.dynamic.head = ar.rectangle(glasses, {x + 8, barY}, 2, 4, palette.white, 0.85)
-    self.dynamic.stored = ar.text(glasses, "", {x + 8, y + 21}, palette.text, 0.7)
-    self.dynamic.rate = ar.text(glasses, "", {x + width - 60, y + 21}, palette.text, 0.7)
-    self.dynamic.projection = ar.text(glasses, "", {x + 8, y + 28}, theme.muted, 0.6)
-    self.dynamic.state = ar.text(glasses, "", {x + width - 60, y + 28}, palette.muted, 0.6)
+    self.dynamic.head = ar.rectangle(glasses, {x + 8 * scale, barY}, 2 * scale, self.barHeight, palette.white, 0.85)
+    self.dynamic.stored = ar.text(glasses, "", {x + 8 * scale, y + 21 * scale}, palette.text, 0.7 * scale)
+    self.dynamic.rate = ar.text(glasses, "", {x + width - 60 * scale, y + 21 * scale}, palette.text, 0.7 * scale)
+    self.dynamic.projection = ar.text(glasses, "", {x + 8 * scale, y + 28 * scale}, theme.muted, 0.6 * scale)
+    self.dynamic.state = ar.text(glasses, "", {x + width - 60 * scale, y + 28 * scale}, palette.muted, 0.6 * scale)
 
     -- Clicking the name toggles cycling, so the whole switcher lives in one place.
-    self:addRegion(x + 30, y + 1, width - 76, 12, "cycle")
+    self:addRegion(x + 30 * scale, y + 1 * scale, width - 76 * scale, 12 * scale, "cycle")
 
-    self.barX = x + 8
+    self.barX = x + 8 * scale
     self.barY = barY
     self.barWidth = barWidth
 
@@ -167,7 +174,7 @@ function panel:setBar(fraction, color)
 
     -- An empty buffer must render as empty. Clamping to a minimum width left a
     -- permanent sliver at 0%, which looked like a rendering artefact.
-    if filled < 0.5 then
+    if filled < 0.5 * self.scale then
         self.dynamic.bar.setAlpha(0)
         self.dynamic.head.setAlpha(0)
         return
@@ -176,20 +183,20 @@ function panel:setBar(fraction, color)
 
     -- ar.rectangle lays vertices out as TL, BL, BR, TR — so widening the bar
     -- means moving the two right-hand vertices only.
-    self.dynamic.bar.setVertex(3, self.barX + filled, self.barY + 4)
+    self.dynamic.bar.setVertex(3, self.barX + filled, self.barY + self.barHeight)
     self.dynamic.bar.setVertex(4, self.barX + filled, self.barY)
 
     -- Park the cap on the leading edge, and hide it once the bar is full so it
     -- does not hang off the end of the track.
-    local headWidth = 2
+    local headWidth = self.headWidth
     if filled >= self.barWidth - headWidth then
         self.dynamic.head.setAlpha(0)
     else
         self.dynamic.head.setAlpha(0.85)
         local headX = self.barX + filled - headWidth
         self.dynamic.head.setVertex(1, headX, self.barY)
-        self.dynamic.head.setVertex(2, headX, self.barY + 4)
-        self.dynamic.head.setVertex(3, headX + headWidth, self.barY + 4)
+        self.dynamic.head.setVertex(2, headX, self.barY + self.barHeight)
+        self.dynamic.head.setVertex(3, headX + headWidth, self.barY + self.barHeight)
         self.dynamic.head.setVertex(4, headX + headWidth, self.barY)
     end
 
