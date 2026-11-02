@@ -905,6 +905,95 @@ do
     stockCard:remove()
 end
 
+-- AR compact panel layout -------------------------------------------------------
+--
+-- Test written with AI.
+--
+-- Compact narrows the card to 120 px but used the full card's absolute field
+-- offsets and never fitted the text, so long values ran into each other. The
+-- compact columns now cap every field; full mode keeps its unbounded layout.
+
+do
+    local textLib = require("lib.utils.text")
+
+    local function textRight(object)
+        return object.position[1] + textLib.len(object.text or "") * 6 * object.scale
+    end
+    local function textBottom(object)
+        return object.position[2] + 9 * object.scale
+    end
+
+    local longView = {
+        name = "A VERY LONG BUFFER NAME",
+        kind = "lsc", state = states.ONLINE, problems = 1,
+        stored = 999.9e24, capacity = 999.9e24, percent = 0.0001,
+        net = -999.9e24, fillSeconds = 700 * 86400 + 23 * 3600 + 59 * 60,
+        fillDirection = "empty",
+    }
+
+    local compactSettings = configuration.glassesDefaults()
+    compactSettings.compact = true
+    local compactCard = arPanel.new(fakeGlasses(), compactSettings, theme, viewport)
+    compactCard:update(longView, true)
+
+    eq("compact fits the name to its column",
+        textLib.len(compactCard.dynamic.name.text), 10)
+    eq("compact fits the percentage to its column",
+        textLib.len(compactCard.dynamic.percent.text), 7)
+    eq("compact fits the stored value to its column",
+        textLib.len(compactCard.dynamic.stored.text), 11)
+    eq("compact fits the rate to its column",
+        textLib.len(compactCard.dynamic.rate.text), 12)
+    eq("compact fits the projection to its column",
+        textLib.len(compactCard.dynamic.projection.text), 17)
+    eq("compact fits the state to its column",
+        textLib.len(compactCard.dynamic.state.text), 11)
+
+    local name = compactCard.dynamic.name
+    local percent = compactCard.dynamic.percent
+    local stored = compactCard.dynamic.stored
+    local rate = compactCard.dynamic.rate
+    local projection = compactCard.dynamic.projection
+    local state = compactCard.dynamic.state
+
+    check("compact name starts clear of the buttons",
+        name.position[1] >= compactCard.x + 28)
+    check("compact name clears the percentage",
+        textRight(name) <= percent.position[1] - 1)
+    check("compact percentage stays inside the card",
+        textRight(percent) <= compactCard.x + compactCard.width)
+    check("compact header clears the bar",
+        math.max(textBottom(name), textBottom(percent)) <= compactCard.barY)
+    check("compact stored row clears the bar",
+        stored.position[2] >= compactCard.barY + compactCard.barHeight)
+    check("compact stored value clears the rate",
+        textRight(stored) <= rate.position[1] - 1)
+    check("compact rate stays inside the card",
+        textRight(rate) <= compactCard.x + compactCard.width)
+    check("compact bottom row clears the stored row",
+        math.max(textBottom(stored), textBottom(rate)) <= projection.position[2])
+    check("compact projection clears the state",
+        textRight(projection) <= state.position[1] - 1)
+    check("compact state stays inside the card",
+        textRight(state) <= compactCard.x + compactCard.width)
+    check("compact bottom row stays inside the card",
+        math.max(textBottom(projection), textBottom(state))
+            <= compactCard.y + compactCard.height)
+
+    local fullSettings = configuration.glassesDefaults()
+    local fullCard = arPanel.new(fakeGlasses(), fullSettings, theme, viewport)
+    fullCard:update(longView, true)
+    eq("full mode keeps the long name",
+        fullCard.dynamic.name.text, "A VERY LONG BUFFER NAME ⟳")
+    eq("full mode keeps the full stored value",
+        fullCard.dynamic.stored.text, "999.9Y EU / 999.9Y EU")
+    eq("full mode keeps the long projection",
+        fullCard.dynamic.projection.text, "Time to empty 700d 23h 59m")
+    eq("full mode keeps its state position",
+        fullCard.dynamic.state.position[1],
+        fullCard.x + fullCard.width - 60)
+end
+
 -- AR manager -------------------------------------------------------------------
 
 local arHud = require("ar")

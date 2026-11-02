@@ -29,6 +29,13 @@ local HEIGHT = 34
 local COMPACT_WIDTH = 120
 local MARGIN = 4
 
+local COMPACT_NAME_CHARS = 10
+local COMPACT_PERCENT_CHARS = 7
+local COMPACT_STORED_CHARS = 11
+local COMPACT_RATE_CHARS = 12
+local COMPACT_PROJECTION_CHARS = 17
+local COMPACT_STATE_CHARS = 11
+
 -- Where the card sits. Minecraft's own HUD is not negotiable, so the anchor has
 -- to be the user's choice: chat occupies the bottom-left, the hotbar and health
 -- the bottom-centre, potion effects the top-right. top-left is the default
@@ -90,8 +97,9 @@ end
 -- space hud_click reports its coordinates in, which is what makes the hit boxes
 -- below line up without any conversion.
 function panel.new(glasses, settings, theme, resolution)
+    local compact = settings.compact and true or false
     local scale = ar.hudScale(settings.panelScale)
-    local width = (settings.compact and COMPACT_WIDTH or WIDTH) * scale
+    local width = (compact and COMPACT_WIDTH or WIDTH) * scale
     local cardHeight = HEIGHT * scale
 
     -- Snap to the chosen corner, then apply the user's nudge on top.
@@ -113,6 +121,12 @@ function panel.new(glasses, settings, theme, resolution)
         scale = scale,
         barHeight = 4 * scale,
         headWidth = 2 * scale,
+        nameWidth = compact and COMPACT_NAME_CHARS or nil,
+        percentWidth = compact and COMPACT_PERCENT_CHARS or nil,
+        storedWidth = compact and COMPACT_STORED_CHARS or nil,
+        rateWidth = compact and COMPACT_RATE_CHARS or nil,
+        projectionWidth = compact and COMPACT_PROJECTION_CHARS or nil,
+        stateWidth = compact and COMPACT_STATE_CHARS or nil,
     }, panel)
 
     local barY = y + 14 * scale
@@ -141,7 +155,8 @@ function panel.new(glasses, settings, theme, resolution)
     self.dynamic.stored = ar.text(glasses, "", {x + 8 * scale, y + 21 * scale}, palette.text, 0.7 * scale)
     self.dynamic.rate = ar.text(glasses, "", {x + width - 60 * scale, y + 21 * scale}, palette.text, 0.7 * scale)
     self.dynamic.projection = ar.text(glasses, "", {x + 8 * scale, y + 28 * scale}, theme.muted, 0.6 * scale)
-    self.dynamic.state = ar.text(glasses, "", {x + width - 60 * scale, y + 28 * scale}, palette.muted, 0.6 * scale)
+    local stateX = compact and x + 72 * scale or x + width - 60 * scale
+    self.dynamic.state = ar.text(glasses, "", {stateX, y + 28 * scale}, palette.muted, 0.6 * scale)
 
     -- Clicking the name toggles cycling, so the whole switcher lives in one place.
     self:addRegion(x + 30 * scale, y + 1 * scale, width - 76 * scale, 12 * scale, "cycle")
@@ -215,11 +230,17 @@ function panel:update(view, cycling)
 
     -- text.upper, not :upper — string.upper only handles ASCII and would leave
     -- a non-Latin buffer name untouched or mangled.
+    local suffix = cycling and " ⟳" or ""
     local name = text.upper(view.name or "?")
-    self.dynamic.name.setText(cycling and (name .. " ⟳") or name)
+    if self.nameWidth then
+        name = text.fit(name, math.max(1, self.nameWidth - text.len(suffix)))
+    end
+    self.dynamic.name.setText(name .. suffix)
     self.dynamic.name.setColor(screen.toRGB(cycling and self.theme.primary or self.theme.muted))
 
-    self.dynamic.percent.setText(format.percent(fraction))
+    local percent = format.percent(fraction)
+    if self.percentWidth then percent = text.fit(percent, self.percentWidth) end
+    self.dynamic.percent.setText(percent)
 
     -- Glide toward the reading instead of snapping to it. The percentage text
     -- still shows the real value — only the bar is smoothed.
@@ -236,19 +257,35 @@ function panel:update(view, cycling)
     if view.capacity and view.capacity > 0 then
         stored = stored .. " / " .. format.compact(view.capacity)
     end
+    if self.storedWidth then stored = text.fit(stored, self.storedWidth) end
     self.dynamic.stored.setText(stored)
 
-    self.dynamic.rate.setText(format.rate(view.net))
+    local rate = format.rate(view.net)
+    if self.rateWidth then rate = text.fit(rate, self.rateWidth) end
+    self.dynamic.rate.setText(rate)
     self.dynamic.rate.setColor(screen.toRGB((view.net or 0) >= 0 and palette.green or palette.red))
 
     local projectionLabel, projectionValue = format.projection(view.fillSeconds, view.fillDirection)
-    self.dynamic.projection.setText(projectionLabel and (projectionLabel .. " " .. projectionValue) or "")
-
-    if view.state == states.ONLINE or view.state == states.IDLE then
-        self.dynamic.state.setText(view.problems and view.problems > 0 and "MAINTENANCE" or "")
+    if projectionLabel then
+        if self.projectionWidth then
+            local shortLabel = view.fillDirection == "full" and "Full" or "Empty"
+            projectionLabel = text.fit(shortLabel .. " " .. projectionValue, self.projectionWidth)
+        else
+            projectionLabel = projectionLabel .. " " .. projectionValue
+        end
     else
-        self.dynamic.state.setText(tostring(view.state or ""))
+        projectionLabel = ""
     end
+    self.dynamic.projection.setText(projectionLabel)
+
+    local state
+    if view.state == states.ONLINE or view.state == states.IDLE then
+        state = view.problems and view.problems > 0 and "MAINTENANCE" or ""
+    else
+        state = tostring(view.state or "")
+    end
+    if self.stateWidth then state = text.fit(state, self.stateWidth) end
+    self.dynamic.state.setText(state)
     self.dynamic.state.setColor(screen.toRGB(STATE_COLORS[view.state] or palette.muted))
 end
 
