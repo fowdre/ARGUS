@@ -237,7 +237,7 @@ end
 -- either way the card just does not exist. `view` is whichever buffer this pair
 -- is showing, so the card follows the energy card's source — including through a
 -- cycle — and shows that buffer's watchlist.
-function hud:updateStock(address, settings, resolution, stockMonitor, view)
+function hud:updateStock(address, settings, resolution, stockMonitor)
     local cardSettings = settings.stock or {}
     local current = self.stockPanels[address]
     local wanted = stockSignature(cardSettings, resolution, settings.panelScale)
@@ -264,8 +264,11 @@ function hud:updateStock(address, settings, resolution, stockMonitor, view)
         current = self.stockPanels[address]
     end
 
-    local rows = stockMonitor:rowsForView(view)
-    local ok = pcall(function() current.instance:update(rows, view) end)
+    local source = self.config.stock and self.config.stock.source
+    local entry = stockMonitor:sourceEntry(source)
+    local rows = entry and stockMonitor:rowsFor(entry) or {}
+    local header = entry and {name = entry.name or entry.detectedName or entry.address} or nil
+    local ok = pcall(function() current.instance:update(rows, header) end)
     if not ok then self:dropStock(address) end
 end
 
@@ -292,11 +295,6 @@ function hud:update(monitor, craftMonitor, stockMonitor)
             current = nil
         end
 
-        -- The buffer this pair is showing, captured so the stock card can follow
-        -- it. Set from the energy panel when one is up (so a cycle carries the
-        -- stock card along); otherwise the pinned source.
-        local displayedView
-
         if not settings.enabled then
             if current then self:drop(address) end
         else
@@ -320,18 +318,15 @@ function hud:update(monitor, craftMonitor, stockMonitor)
             end
 
             if current then
-                displayedView = self:selectView(address, settings, monitor, now)
-                local ok = pcall(function() current.instance:update(displayedView, settings.cycle) end)
+                local view = self:selectView(address, settings, monitor, now)
+                local ok = pcall(function() current.instance:update(view, settings.cycle) end)
                 -- Glasses unplugged mid-frame: forget the panel and let the next
                 -- pass rebuild it if they come back.
                 if not ok then self:drop(address) end
             end
         end
 
-        -- With no energy card up there is no cycle state, so fall back to the
-        -- pinned source for the stock card to follow.
-        if displayedView == nil then displayedView = monitor:resolve(settings.source) end
-        self:updateStock(address, settings, resolution, stockMonitor, displayedView)
+        self:updateStock(address, settings, resolution, stockMonitor)
     end
 
     -- Glasses that vanished from the component list.

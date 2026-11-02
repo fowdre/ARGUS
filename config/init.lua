@@ -46,6 +46,7 @@ local function defaults()
             -- Same reasoning as craft: one getItemInNetwork per watched item is
             -- cheap, but an item count does not need sub-second freshness.
             pollInterval = 2,
+            source = nil,
         },
 
         -- ME crafting monitor.

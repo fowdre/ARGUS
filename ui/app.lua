@@ -175,7 +175,7 @@ end
 -- to the buffer it decorates.
 function app:drawBuffers(width, rows, theme)
     graphics.text(2, 1, "Buffers", theme.primary, true)
-    graphics.text(10, 1, "· click a buffer to show it; pick ME items to watch beside it",
+    graphics.text(10, 1, "· click a buffer to show it; the ME list follows the buffer you edit",
         theme.muted, true)
     panel.rule(2, 2, width - 2, theme)
 
@@ -183,6 +183,13 @@ function app:drawBuffers(width, rows, theme)
     local split = math.min(58, math.floor(width / 2))
     self:drawBufferList(2, split - 3, rows, theme)
     self:drawStockEditor(split, width - split - 1, rows, theme)
+end
+
+function app:setStockBuffer(entry)
+    if not entry then return end
+    self.selectedBuffer = entry.address
+    self.config.stock = self.config.stock or {}
+    self.config.stock.source = entry.address
 end
 
 function app:drawBufferList(x, width, rows, theme)
@@ -246,7 +253,7 @@ function app:drawBufferList(x, width, rows, theme)
         widgets.listItem(x, row, captionW, caption, theme, isSelected, function()
             self.config.screen.source = isAggregate and nil or view.id
             -- Follow the selection into the picker, but only for a real buffer.
-            if entry then self.selectedBuffer = entry.address end
+            if entry then self:setStockBuffer(entry) end
             self.dirty = true
         end, nil, entry and entry.enabled)
 
@@ -292,13 +299,23 @@ end
 -- real buffer rather than left dangling.
 function app:selectedStockEntry()
     local buffers = self.config.buffers or {}
+    local configured = self.config.stock and self.config.stock.source
     for _, entry in ipairs(buffers) do
-        if entry.address == self.selectedBuffer then return entry end
+        if entry.address == configured and entry.enabled ~= false then
+            self.selectedBuffer = entry.address
+            return entry
+        end
     end
-    -- Fall back to whatever the dashboard is showing, then to the first buffer.
+
     local view = self.monitor:resolve(self.config.screen.source)
-    local entry = self:bufferEntryFor(view) or buffers[1]
-    if entry then self.selectedBuffer = entry.address end
+    local entry = self:bufferEntryFor(view)
+    if not entry then
+        for _, candidate in ipairs(buffers) do
+            if candidate.enabled ~= false then entry = candidate break end
+        end
+    end
+    entry = entry or buffers[1]
+    if entry then self:setStockBuffer(entry) end
     return entry
 end
 
@@ -341,7 +358,7 @@ function app:drawStockEditor(x, width, rows, theme)
     if self.config.stock and self.config.stock.enabled == false then
         graphics.text(x2, row, "feature off globally", palette.amber, true)
     else
-        graphics.text(x2, row, "beside this buffer on the dashboard", theme.muted, true)
+        graphics.text(x2, row, "on the dashboard and the AR stock card", theme.muted, true)
     end
     row = row + 2
 
@@ -728,10 +745,6 @@ function app:drawGlasses(width, rows, theme)
         row = row + 1
     end
 
-    -- Stock card -------------------------------------------------------------
-    -- A third card, independent again: shows the watched ME item/fluid amounts
-    -- for whichever buffer these glasses display (it follows a cycle). What each
-    -- buffer watches is picked on the Buffers page.
     local stockCard = settings.stock
 
     label("Stock card")

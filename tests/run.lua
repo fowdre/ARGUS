@@ -2162,10 +2162,11 @@ do
     fakeComponents["glasses-1"] = fakeGlasses()
     fakeTypes["glasses-1"] = "glasses"
 
+    scConfig.stock.source = "lsc-sc"
     local scHud = arHud.new(scConfig)
     local settings = configuration.glassesFor(scConfig, "glasses-1")
     settings.enabled = false        -- energy card off, to prove independence
-    settings.source = "lsc-sc"      -- pin the glasses to the buffer
+    settings.source = "lsc-sc"
     settings.stock.enabled = true
     settings.stock.anchor = "bottom-left"
     settings.stock.rows = 5
@@ -2189,22 +2190,17 @@ do
     local function trimmed(object) return (object.text or ""):gsub("%s+$", "") end
     local card = scHud.stockPanels["glasses-1"].instance
     eq("the stock card hints its fold key on itself", card.dynamic.collapse.text, "=")
-    eq("the stock card names the buffer it follows", trimmed(card.dynamic.buffer), "Main LSC")
+    eq("the stock card names its pinned buffer", trimmed(card.dynamic.buffer), "Main LSC")
     eq("the stock card shows a present item's count", card.rowObjects[1].count.text, "4.1k")
     eq("the stock card labels the row", trimmed(card.rowObjects[1].label), "Titanium Ingot")
     eq("the stock card shows a fluid amount in mB", card.rowObjects[2].count.text, "0 mB")
 
-    -- Follows the source: point the glasses at a buffer with no watchlist and the
-    -- card empties, without a rebuild (source is not part of its signature).
     settings.source = "ghost"
     scHud:update(scMonitor, nil, scStock)
-    eq("the stock card empties when the view has no watchlist",
-        card.rowObjects[1].count.text, "")
-    eq("the stock card explains an empty view", card.dynamic.empty.text, "nothing watched here")
-
-    settings.source = "lsc-sc"
-    scHud:update(scMonitor, nil, scStock)
-    eq("the stock card follows the source back", trimmed(card.rowObjects[1].label), "Titanium Ingot")
+    eq("the stock card ignores the energy card's source",
+        trimmed(card.rowObjects[1].label), "Titanium Ingot")
+    eq("the stock card keeps its pinned buffer header",
+        trimmed(card.dynamic.buffer), "Main LSC")
 
     -- Fold toggle. The stock card gained its own hit region for this; clicking the
     -- − folds it to the header, and clicking the folded strip expands it again.
@@ -2261,149 +2257,181 @@ do
     fakeTypes["glasses-1"] = nil
 end
 
--- AR stock follows the displayed energy buffer ---------------------------------
+-- AR stock pinned source -------------------------------------------------------
 --
 -- Test written with AI.
 --
--- The stock card is a companion to the energy card: whichever buffer the glasses
--- show, its watchlist is the one on the card. That has to hold through a cycle,
--- through a pinned source, and when the watchlist or the buffer disappears.
+-- The stock card is independent of the energy card: it lists the watchlist of
+-- the buffer selected on the Buffers page. The energy card may be on the
+-- aggregate or cycling through other buffers without changing it.
 
 do
     local scConfig = configuration.defaults()
     scConfig.buffers = {
-        {address = "lsc-follow-a", name = "Alpha", kind = "lsc", enabled = true,
+        {address = "lsc-pin-a", name = "Alpha", kind = "lsc", enabled = true,
          stock = {enabled = true, watch = {
             {kind = "item", name = "gt:a", damage = 0, label = "Alpha Ingot"},
          }}},
-        {address = "lsc-follow-b", name = "Beta", kind = "lsc", enabled = true,
+        {address = "lsc-pin-b", name = "Beta", kind = "lsc", enabled = true,
          stock = {enabled = true, watch = {
             {kind = "item", name = "gt:b", damage = 0, label = "Beta Ingot"},
          }}},
     }
+    scConfig.stock.source = "lsc-pin-a"
 
-    local followMonitor = monitorLib.new(scConfig)
+    local pinMonitor = monitorLib.new(scConfig)
     clock = 14000
-    local viewA = followMonitor:buildView("lsc-follow-a", {
+    local viewA = pinMonitor:buildView("lsc-pin-a", {
         name = "Alpha", kind = "lsc", state = states.ONLINE,
-        address = "lsc-follow-a", stored = 100, capacity = 200,
+        address = "lsc-pin-a", stored = 100, capacity = 200,
     }, clock)
-    -- A wireless view is another view of the same buffer, not another buffer:
-    -- its address is still the LSC's, and its watchlist belongs to that LSC.
-    local wirelessA = followMonitor:buildView("lsc-follow-a:wireless", {
-        name = "Alpha · Wireless", kind = "wireless", state = states.ONLINE,
-        address = "lsc-follow-a", stored = 10, capacity = 0,
-    }, clock)
-    local viewB = followMonitor:buildView("lsc-follow-b", {
+    local viewB = pinMonitor:buildView("lsc-pin-b", {
         name = "Beta", kind = "lsc", state = states.ONLINE,
-        address = "lsc-follow-b", stored = 50, capacity = 200,
+        address = "lsc-pin-b", stored = 50, capacity = 200,
     }, clock)
-    followMonitor.views["lsc-follow-a"] = viewA
-    followMonitor.views["lsc-follow-a:wireless"] = wirelessA
-    followMonitor.views["lsc-follow-b"] = viewB
-    followMonitor.order = {"lsc-follow-a", "lsc-follow-a:wireless", "lsc-follow-b"}
+    local aggregate = pinMonitor:buildView(monitorLib.AGGREGATE_ID, {
+        name = "All buffers", kind = "aggregate", state = states.ONLINE,
+        stored = 150, capacity = 400,
+    }, clock)
+    pinMonitor.views["lsc-pin-a"] = viewA
+    pinMonitor.views["lsc-pin-b"] = viewB
+    pinMonitor.views[monitorLib.AGGREGATE_ID] = aggregate
+    pinMonitor.order = {"lsc-pin-a", "lsc-pin-b", monitorLib.AGGREGATE_ID}
 
-    local followStock = stockLib.new(scConfig)
-    followStock.snapshot = {
+    local pinStock = stockLib.new(scConfig)
+    pinStock.snapshot = {
         [stockLib.key("item", "gt:a", 0)] = {kind = "item", label = "Alpha Ingot", count = 10, present = true},
         [stockLib.key("item", "gt:b", 0)] = {kind = "item", label = "Beta Ingot", count = 20, present = true},
     }
 
-    fakeComponents["glasses-follow"] = fakeGlasses()
-    fakeTypes["glasses-follow"] = "glasses"
+    fakeComponents["glasses-pin"] = fakeGlasses()
+    fakeTypes["glasses-pin"] = "glasses"
 
-    local followHud = arHud.new(scConfig)
-    local followSettings = configuration.glassesFor(scConfig, "glasses-follow")
-    followSettings.cycle = true
-    followSettings.cycleInterval = 5
-    followSettings.stock.enabled = true
+    local pinHud = arHud.new(scConfig)
+    local pinSettings = configuration.glassesFor(scConfig, "glasses-pin")
+    pinSettings.source = nil -- the energy card starts on the aggregate
+    pinSettings.stock.enabled = true
 
     local function trimmed(object) return (object.text or ""):gsub("%s+$", "") end
     local function stockCard()
-        return followHud.stockPanels["glasses-follow"].instance
+        return pinHud.stockPanels["glasses-pin"].instance
+    end
+    local function energyName()
+        return trimmed(pinHud.panels["glasses-pin"].instance.dynamic.name)
     end
 
     clock = 14003
-    followHud:update(followMonitor, nil, followStock)
-    eq("the stock card starts on the displayed buffer",
+    pinHud:update(pinMonitor, nil, pinStock)
+    eq("the energy card starts on the aggregate", energyName(), "ALL BUFFERS")
+    eq("the stock card starts on the pinned buffer",
         trimmed(stockCard().dynamic.buffer), "Alpha")
-    eq("the stock card starts with that buffer's watchlist",
+    eq("the stock card starts with the pinned watchlist",
         trimmed(stockCard().rowObjects[1].label), "Alpha Ingot")
 
+    -- Changing the energy source must not touch the stock card.
+    pinSettings.source = "lsc-pin-b"
+    pinHud:update(pinMonitor, nil, pinStock)
+    eq("the energy card switched to the other buffer", energyName(), "BETA")
+    eq("the stock card ignores the energy source",
+        trimmed(stockCard().dynamic.buffer), "Alpha")
+    eq("the stock card keeps its pinned watchlist",
+        trimmed(stockCard().rowObjects[1].label), "Alpha Ingot")
+
+    -- Cycling must not touch it either.
+    pinSettings.cycle = true
+    pinSettings.cycleInterval = 5
     clock = 14009
-    followHud:update(followMonitor, nil, followStock)
-    eq("the energy card cycled onto the wireless view",
-        trimmed(followHud.panels["glasses-follow"].instance.dynamic.name),
-        "ALPHA · WIRELESS ⟳")
-    eq("the stock card follows the cycle onto a wireless view",
-        trimmed(stockCard().dynamic.buffer), "Alpha · Wireless")
-    eq("a wireless view still shows its buffer's watchlist",
+    pinHud:update(pinMonitor, nil, pinStock)
+    eq("the energy card cycled to Beta", energyName(), "BETA ⟳")
+    eq("the stock card ignores the energy cycle",
+        trimmed(stockCard().dynamic.buffer), "Alpha")
+    eq("the stock card keeps its watchlist through a cycle",
         trimmed(stockCard().rowObjects[1].label), "Alpha Ingot")
 
     clock = 14015
-    followHud:update(followMonitor, nil, followStock)
-    eq("the energy card cycled to the second buffer",
-        trimmed(followHud.panels["glasses-follow"].instance.dynamic.name), "BETA ⟳")
-    eq("the stock card follows the cycle to the second buffer",
-        trimmed(stockCard().dynamic.buffer), "Beta")
-    eq("the stock card shows the cycled buffer's watchlist",
-        trimmed(stockCard().rowObjects[1].label), "Beta Ingot")
-
-    clock = 14021
-    followHud:update(followMonitor, nil, followStock)
-    eq("the stock card follows the cycle back",
+    pinHud:update(pinMonitor, nil, pinStock)
+    eq("the energy card cycled onto the aggregate", energyName(), "ALL BUFFERS ⟳")
+    eq("the aggregate does not blank the stock card",
         trimmed(stockCard().dynamic.buffer), "Alpha")
-    eq("the stock card shows the first buffer's watchlist again",
+    eq("the aggregate keeps the pinned watchlist",
         trimmed(stockCard().rowObjects[1].label), "Alpha Ingot")
 
-    -- Pinning is the other half of the same setting. A pinned wireless view is
-    -- the case where the stock card used to go blank permanently.
-    followSettings.cycle = false
-    followSettings.source = "lsc-follow-a:wireless"
-    followHud:update(followMonitor, nil, followStock)
-    eq("the stock card follows a pinned wireless view",
-        trimmed(stockCard().dynamic.buffer), "Alpha · Wireless")
-    eq("a pinned wireless view still shows its buffer's watchlist",
-        trimmed(stockCard().rowObjects[1].label), "Alpha Ingot")
-
-    followSettings.source = "lsc-follow-b"
-    followHud:update(followMonitor, nil, followStock)
-    eq("the stock card follows a pinned physical buffer",
+    -- The Buffers page selection is the stock card's source.
+    pinSettings.cycle = false
+    pinSettings.source = nil
+    scConfig.stock.source = "lsc-pin-b"
+    pinHud:update(pinMonitor, nil, pinStock)
+    eq("pinning another buffer switches the stock card",
         trimmed(stockCard().dynamic.buffer), "Beta")
-    eq("the stock card shows a pinned buffer's watchlist",
+    eq("the newly pinned buffer supplies the rows",
         trimmed(stockCard().rowObjects[1].label), "Beta Ingot")
 
-    -- Missing buffer, missing watchlist and missing stock table are all empty
-    -- states, not crashes or stale rows.
-    followSettings.source = "missing-view"
-    followHud:update(followMonitor, nil, followStock)
-    eq("a missing view leaves the stock card empty", stockCard().rowObjects[1].label.text, "")
-    eq("a missing view explains itself", stockCard().dynamic.empty.text, "nothing watched here")
+    -- The editor and the card resolve the same persisted source.
+    local appLib = require("ui.app")
+    local stockApp = appLib.new(pinMonitor, scConfig, nil, nil, nil, pinStock)
+    eq("the picker resolves the pinned stock buffer",
+        stockApp:selectedStockEntry().address, "lsc-pin-b")
+    stockApp:setStockBuffer(scConfig.buffers[1])
+    eq("selecting a buffer pins the stock card", scConfig.stock.source, "lsc-pin-a")
+    scConfig.stock.source = "missing"
+    eq("a stale stock source repairs to the first enabled buffer",
+        stockApp:selectedStockEntry().address, "lsc-pin-a")
+    eq("the repaired stock source is persisted", scConfig.stock.source, "lsc-pin-a")
 
-    followSettings.source = "lsc-follow-b"
+    -- Missing, disabled and empty sources degrade safely.
+    scConfig.stock.source = "lsc-pin-a"
+    scConfig.buffers[1].enabled = false
+    pinHud:update(pinMonitor, nil, pinStock)
+    eq("a disabled pinned buffer falls back to the next enabled one",
+        trimmed(stockCard().dynamic.buffer), "Beta")
+    eq("the fallback buffer supplies the rows",
+        trimmed(stockCard().rowObjects[1].label), "Beta Ingot")
+
+    scConfig.buffers[1].enabled = true
+    scConfig.stock.source = "missing"
+    pinHud:update(pinMonitor, nil, pinStock)
+    eq("a missing stock source falls back to the first enabled buffer",
+        trimmed(stockCard().dynamic.buffer), "Alpha")
+
+    scConfig.stock.source = "lsc-pin-b"
     scConfig.buffers[2].stock = nil
-    followHud:update(followMonitor, nil, followStock)
-    eq("a missing watchlist leaves the stock card empty", stockCard().rowObjects[1].label.text, "")
-    eq("a missing watchlist explains itself", stockCard().dynamic.empty.text, "nothing watched here")
+    pinHud:update(pinMonitor, nil, pinStock)
+    eq("a missing watchlist leaves the stock card empty",
+        stockCard().rowObjects[1].label.text, "")
+    eq("a missing watchlist explains itself",
+        stockCard().dynamic.empty.text, "nothing watched here")
+    eq("the header still names the pinned buffer",
+        trimmed(stockCard().dynamic.buffer), "Beta")
 
     scConfig.buffers[2].stock = {enabled = true, watch = {}}
-    followHud:update(followMonitor, nil, followStock)
-    eq("an empty watchlist leaves the stock card empty", stockCard().rowObjects[1].label.text, "")
-    eq("an empty watchlist explains itself", stockCard().dynamic.empty.text, "nothing watched here")
+    pinHud:update(pinMonitor, nil, pinStock)
+    eq("an empty watchlist leaves the stock card empty",
+        stockCard().rowObjects[1].label.text, "")
+    eq("an empty watchlist explains itself",
+        stockCard().dynamic.empty.text, "nothing watched here")
 
-    -- With the energy card switched off there is no cycle state; the stock card
-    -- still follows the pinned source instead of going blank.
-    followSettings.enabled = false
-    followSettings.source = "lsc-follow-a"
-    followHud:update(followMonitor, nil, followStock)
-    eq("the stock card follows the pinned source without an energy card",
+    scConfig.buffers[1].enabled = false
+    scConfig.buffers[2].enabled = false
+    pinHud:update(pinMonitor, nil, pinStock)
+    eq("with no enabled buffer the stock card has no header",
+        trimmed(stockCard().dynamic.buffer), "")
+    eq("with no enabled buffer the stock card explains itself",
+        stockCard().dynamic.empty.text, "nothing watched here")
+
+    -- The card works with the energy card switched off entirely.
+    scConfig.buffers[1].enabled = true
+    scConfig.buffers[2].enabled = true
+    scConfig.stock.source = "lsc-pin-a"
+    pinSettings.enabled = false
+    pinHud:update(pinMonitor, nil, pinStock)
+    eq("the stock card works without an energy card",
         trimmed(stockCard().dynamic.buffer), "Alpha")
-    eq("the stock card keeps that buffer's watchlist without an energy card",
+    eq("the stock card keeps its rows without an energy card",
         trimmed(stockCard().rowObjects[1].label), "Alpha Ingot")
 
-    followHud:removeAll()
-    fakeComponents["glasses-follow"] = nil
-    fakeTypes["glasses-follow"] = nil
+    pinHud:removeAll()
+    fakeComponents["glasses-pin"] = nil
+    fakeTypes["glasses-pin"] = nil
 end
 
 -- Installer manifest -----------------------------------------------------------

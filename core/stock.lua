@@ -193,17 +193,16 @@ function stock:rowsFor(entry)
     return out
 end
 
--- Rows for a monitor view's backing buffer. A convenience over rowsFor for
--- callers that hold a view rather than a config entry (the AR card follows
--- whichever buffer the glasses show). The aggregate, a virtual wireless view and
--- a remote buffer have no local ME network of their own, so they get nothing.
-function stock:rowsForView(view)
-    if not view or not view.address or view.remote then return {} end
-    if view.kind == "aggregate" then return {} end
-    for _, entry in ipairs(self.config.buffers or {}) do
-        if entry.address == view.address then return self:rowsFor(entry) end
+
+function stock:sourceEntry(address)
+    local buffers = self.config.buffers or {}
+    for _, entry in ipairs(buffers) do
+        if entry.address == address and entry.enabled ~= false then return entry end
     end
-    return {}
+    for _, entry in ipairs(buffers) do
+        if entry.enabled ~= false then return entry end
+    end
+    return nil
 end
 
 -- The whole network inventory, for the picker. HEAVY — getItemsInNetwork returns
