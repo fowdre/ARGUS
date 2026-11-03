@@ -60,9 +60,12 @@ package.preload["component"] = function()
 end
 
 local clock = 0
+-- Wall-clock seconds not seen by uptime; simulates server downtime.
+local wallSkew = 0
 package.preload["computer"] = function()
     return {
         uptime = function() return clock end,
+        realTime = function() return clock + wallSkew end,
         -- The default network key is derived from this, so it has to look like a
         -- real UUID.
         address = function() return "3a2f1c9e-0000-4000-8000-000000000042" end,
@@ -1003,17 +1006,18 @@ fakeTypes["glasses-1"] = "glasses"
 
 local hudConfig = configuration.defaults()
 hudConfig.buffers = {}
+clock = 100
 local hud = arHud.new(hudConfig)
 
 -- Rebuild the monitor with two views so cycling has something to rotate through.
 config.buffers[1].address = "lsc-address"
-clock = 100
 monitor:update()
 
 local glassesSettings = configuration.glassesFor(hudConfig, "glasses-1")
 glassesSettings.cycle = true
 glassesSettings.cycleInterval = 5
 
+clock = 110
 hud:update(monitor)
 check("hud builds a panel for the glasses", hud.panels["glasses-1"] ~= nil)
 local firstIndex = hud.panels["glasses-1"].cycleIndex
@@ -1126,20 +1130,60 @@ near("manual resolution overrides the reported one",
 
 fakeComponents["glasses-settle"] = fakeGlasses()
 fakeTypes["glasses-settle"] = "glasses"
+-- Distinct wearer so input resolves to this pair, not glasses-1.
+fakeComponents["glasses-settle"].getBindPlayers = method(function() return "Settler" end)
 
 clock = 0
+wallSkew = 0
 local settling = arHud.new(hudConfig)
-clock = 2
+local settleSettings = configuration.glassesFor(hudConfig, "glasses-settle")
+settleSettings.cycle = false
+
+clock = 9
 settling:update(monitor)
 eq("hud waits out the startup settle window", settling.panels["glasses-settle"], nil)
 
-clock = 3
+clock = 10
 settling:update(monitor)
 check("hud starts once the settle window passes", settling.panels["glasses-settle"] ~= nil)
+
+-- Keep the existing card: after a restart the widgets are still in the terminal.
+local resumedCard = settling.panels["glasses-settle"].instance
+local redraws = 0
+local realUpdate = resumedCard.update
+resumedCard.update = function(self, ...)
+    redraws = redraws + 1
+    return realUpdate(self, ...)
+end
+
+-- The machine resumes, so its old readyAt is long past. Only the wall clock
+-- shows the downtime.
+clock = 11
+wallSkew = 120                    -- two minutes of server downtime
+settling:update(monitor)
+eq("a resumed machine does not touch the existing card", redraws, 0)
+
+-- Input may arrive before hud:update sees the gap.
+eq("keys are ignored during the resume settle",
+    settling:handleSignal(monitor, "hud_keyboard", "Settler", "c", 46), false)
+check("the ignored key changed nothing", not settleSettings.cycle)
+
+clock = 20
+settling:update(monitor)
+eq("the resume settle is not a single frame", redraws, 0)
+
+clock = 21
+settling:update(monitor)
+check("the machine redraws after the resume settle", redraws > 0)
+
+check("input works again after the resume settle",
+    settling:handleSignal(monitor, "hud_keyboard", "Settler", "c", 46))
+check("the key toggled cycling after the settle", settleSettings.cycle)
 
 -- Do not leave the extra glasses behind for the tests that follow.
 fakeComponents["glasses-settle"] = nil
 fakeTypes["glasses-settle"] = nil
+wallSkew = 0
 
 -- A clear that failed must not be recorded as done. Its usual failure is the
 -- chunk not being loaded yet, and treating it as complete would leave the
@@ -1997,7 +2041,7 @@ do
     settings.craft.anchor = "top-left"
     settings.craft.rows = 3
 
-    clock = 9003                       -- past the HUD's startup settle window
+    clock = 9010                       -- past the HUD's startup settle window
     cardHud:update(monitor, craftMonitor)
     check("hud builds the crafting card", cardHud.craftPanels["glasses-1"] ~= nil)
     eq("the crafting card does not need the energy card", cardHud.panels["glasses-1"], nil)
@@ -2171,7 +2215,7 @@ do
     settings.stock.anchor = "bottom-left"
     settings.stock.rows = 5
 
-    clock = 12003                      -- past the HUD's startup settle window
+    clock = 12010                      -- past the HUD's startup settle window
     scHud:update(scMonitor, nil, scStock)
     check("hud builds the stock card", scHud.stockPanels["glasses-1"] ~= nil)
     eq("the stock card does not need the energy card", scHud.panels["glasses-1"], nil)
@@ -2320,7 +2364,7 @@ do
         return trimmed(pinHud.panels["glasses-pin"].instance.dynamic.name)
     end
 
-    clock = 14003
+    clock = 14010
     pinHud:update(pinMonitor, nil, pinStock)
     eq("the energy card starts on the aggregate", energyName(), "ALL BUFFERS")
     eq("the stock card starts on the pinned buffer",
@@ -2340,7 +2384,7 @@ do
     -- Cycling must not touch it either.
     pinSettings.cycle = true
     pinSettings.cycleInterval = 5
-    clock = 14009
+    clock = 14016
     pinHud:update(pinMonitor, nil, pinStock)
     eq("the energy card cycled to Beta", energyName(), "BETA ⟳")
     eq("the stock card ignores the energy cycle",
@@ -2348,7 +2392,7 @@ do
     eq("the stock card keeps its watchlist through a cycle",
         trimmed(stockCard().rowObjects[1].label), "Alpha Ingot")
 
-    clock = 14015
+    clock = 14022
     pinHud:update(pinMonitor, nil, pinStock)
     eq("the energy card cycled onto the aggregate", energyName(), "ALL BUFFERS ⟳")
     eq("the aggregate does not blank the stock card",

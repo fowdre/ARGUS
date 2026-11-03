@@ -43,12 +43,11 @@ local GLASSES_RESCAN_INTERVAL = 2
 
 -- How long to wait after ARGUS starts before AR is enabled.
 --
--- Deliberately relative to program start, not computer uptime: uptime is saved
--- with the machine and resumes on a server restart, so it cannot identify a
--- fresh boot. The cost is a few seconds of blank HUD on a manual start.
-local HUD_SETTLE_SECONDS = 3
+local HUD_SETTLE_SECONDS = 10
+local HUD_RESUME_GAP_SECONDS = 30
 
 function hud.new(config)
+    local now = computer.uptime()
     return setmetatable({
         config = config,
         panels = {},
@@ -68,8 +67,25 @@ function hud.new(config)
         viewport = {},
         -- Time while no AR glasses may be interacted with; see HUD_SETTLE_SECONDS.
         -- Avoids race conditions when loading chunks.
-        readyAt = computer.uptime() + HUD_SETTLE_SECONDS,
+        readyAt = now + HUD_SETTLE_SECONDS,
+        -- Wall clock of the last update; uptime pauses during downtime.
+        lastWall = computer.realTime(),
     }, hud)
+end
+
+function hud:settling(now)
+    now = now or computer.uptime()
+    local wall = computer.realTime()
+
+    local gap = wall - (self.lastWall or wall)
+    self.lastWall = wall
+
+    -- Server stalls land here too; waiting again is harmless.
+    if gap >= HUD_RESUME_GAP_SECONDS then
+        self.readyAt = now + HUD_SETTLE_SECONDS
+    end
+
+    return now < self.readyAt
 end
 
 -- Attached glasses, cached between rescans.
@@ -275,7 +291,7 @@ end
 function hud:update(monitor, craftMonitor, stockMonitor)
     local now = computer.uptime()
 
-    if now < self.readyAt then return end
+    if self:settling(now) then return end
 
     local seen = {}
 
@@ -556,6 +572,10 @@ function hud:handleSignal(monitor, name, ...)
     local args = {...}
     if type(args[1]) == "string" and args[1]:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-") then
         table.remove(args, 1)
+    end
+
+    if (name == "hud_click" or name == "hud_keyboard") and self:settling() then
+        return false
     end
 
     if name == "hud_click" then
