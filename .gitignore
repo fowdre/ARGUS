@@ -5,3 +5,5 @@ settings/
 # Local-only working files, intentionally untracked
 CLAUDE.md
 ARGUS-discord.md
+
+tools/ui_preview/*

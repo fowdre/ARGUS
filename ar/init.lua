@@ -117,6 +117,8 @@ end
 local function signature(settings, resolution)
     return table.concat({
         tostring(settings.enabled), tostring(settings.compact), tostring(settings.panelScale or 100),
+        tostring(settings.graphHeight or arPanel.GRAPH_HEIGHT_DEFAULT),
+        tostring(settings.graphHidden),
         tostring(settings.anchor), tostring(settings.offsetX), tostring(settings.offsetY),
         tostring(resolution[1]), tostring(resolution[2]),
     }, "|")
@@ -416,6 +418,9 @@ function hud:applyAction(address, action, monitor)
     elseif action == "cycle" then
         settings.cycle = not settings.cycle
         return monitor:resolve(settings.source)
+    elseif action == "graph" then
+        settings.graphHidden = not settings.graphHidden
+        return true
     end
     return nil
 end

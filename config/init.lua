@@ -216,6 +216,9 @@ function config.glassesDefaults()
         compact = false,
         panelScale = 100,
 
+        graphHeight = 24,
+        graphHidden = false,
+
         -- The crafting card, sharing these glasses with the energy card.
         craft = config.craftCardDefaults(),
 

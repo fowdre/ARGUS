@@ -680,6 +680,21 @@ function app:drawGlasses(width, rows, theme)
             self.dirty = true
         end, nil, true)
     end
+    row = row + 1
+
+    label("Graph")
+    x = 14
+    local graphHeight = arPanel.clampGraphHeight(settings.graphHeight)
+    x = x + widgets.button(x, row, graphHeight .. " units", theme, function()
+        settings.graphHeight = cycleValue(arPanel.GRAPH_HEIGHTS, graphHeight)
+        self.dirty = true
+    end, nil, true) + 2
+    x = x + widgets.button(x, row, settings.graphHidden and "hidden" or "shown", theme, function()
+        settings.graphHidden = not settings.graphHidden
+        self.dirty = true
+    end, nil, not settings.graphHidden) + 2
+    graphics.text(x, row, string.format("expanded card is %d units tall", 38 + graphHeight),
+        theme.muted, true)
     row = row + 2
 
     -- Crafting card ----------------------------------------------------------

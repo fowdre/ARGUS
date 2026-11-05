@@ -846,6 +846,7 @@ do
 
     -- 50% halves every dimension, including the text and the hit boxes.
     local half = configuration.glassesDefaults()
+    half.graphHidden = true
     half.panelScale = 50
     local halfCard = arPanel.new(fakeGlasses(), half, theme, viewport)
     eq("50% halves the card width", halfCard.width, 95)
@@ -906,6 +907,105 @@ do
     eq("50% keeps the stock fold hit box aligned",
         stockCard:hitTest(stockCard.x + 4, stockCard.y + 2), "stock:collapse")
     stockCard:remove()
+end
+
+-- AR charge graph ---------------------------------------------------------------
+--
+-- Test written with AI.
+--
+-- The graph is the energy card's one variable-height band. The default 24-unit
+-- plot makes a 62-unit card; folding it restores the original 34-unit strip
+-- without forgetting the chosen height, and compact mode never grows at all.
+
+do
+    local metrics = require("core.metrics")
+
+    eq("the graph defaults to 24 units", configuration.glassesDefaults().graphHeight, 24)
+    check("the graph starts shown", configuration.glassesDefaults().graphHidden == false)
+
+    local graphGlasses = fakeGlasses()
+    local graphCard = arPanel.new(graphGlasses, configuration.glassesDefaults(), theme, viewport)
+    eq("the default graph card is 62 units tall", graphCard.height, 62)
+    eq("the graph allocates one column per sample", #graphCard.graphColumns, 120)
+    eq("the graph arrow maps to the graph action",
+        graphCard:hitTest(graphCard.x + graphCard.width - 7, graphCard.y + 17.5), "graph")
+
+    local graphObjects = countObjects(graphGlasses)
+    graphCard:update(arView)
+    eq("a view without a tracker shows the collecting message",
+        graphCard.graph.message.text, "collecting data…")
+    eq("updating the graph does not create objects",
+        countObjects(graphGlasses), graphObjects)
+    graphCard:remove()
+    eq("the graph card removes every object", countObjects(graphGlasses), 0)
+
+    -- Custom heights move the field rows and bottom edge, not the header.
+    local tall = configuration.glassesDefaults()
+    tall.graphHeight = 36
+    local tallCard = arPanel.new(fakeGlasses(), tall, theme, viewport)
+    eq("a 36-unit graph makes a 74-unit card", tallCard.height, 74)
+    tallCard:remove()
+
+    eq("the graph minimum clamps", arPanel.clampGraphHeight(1), 8)
+    eq("the graph maximum clamps", arPanel.clampGraphHeight(99), 48)
+    eq("an absent graph height uses the default", arPanel.clampGraphHeight(nil), 24)
+
+    -- Folding restores the original strip and keeps the chosen height.
+    local folded = configuration.glassesDefaults()
+    folded.graphHeight = 36
+    folded.graphHidden = true
+    local foldedGlasses = fakeGlasses()
+    local foldedCard = arPanel.new(foldedGlasses, folded, theme, viewport)
+    eq("a folded graph restores the 34-unit strip", foldedCard.height, 34)
+    eq("a folded graph creates no plot", foldedCard.graph, nil)
+    eq("a folded graph creates no columns", #foldedCard.graphColumns, 0)
+    eq("folding keeps the chosen height", folded.graphHeight, 36)
+    eq("the folded arrow maps to the graph action",
+        foldedCard:hitTest(foldedCard.x + foldedCard.width - 7, foldedCard.y + 17.5), "graph")
+    foldedCard:remove()
+
+    -- Compact cards never show a graph, whatever the settings say.
+    local compactGraph = configuration.glassesDefaults()
+    compactGraph.compact = true
+    compactGraph.graphHeight = 36
+    local compactGraphCard = arPanel.new(fakeGlasses(), compactGraph, theme, viewport)
+    eq("compact ignores the graph height", compactGraphCard.height, 34)
+    eq("compact creates no plot", compactGraphCard.graph, nil)
+    eq("compact has no graph hit box",
+        compactGraphCard:hitTest(compactGraphCard.x + compactGraphCard.width - 7,
+            compactGraphCard.y + 17.5), nil)
+    compactGraphCard:remove()
+
+    -- window caption derived from the tracker.
+    -- A real series: newest on the right, unused columns hidden, bounds and the
+    local tracker = metrics.new(metrics.intervalFor(600))
+    for i = 1, 10 do metrics.update(tracker, 1000 + i * 10, i * 5) end
+    local plottedCard = arPanel.new(fakeGlasses(), configuration.glassesDefaults(), theme, viewport)
+    plottedCard:update({
+        name = "Main LSC", kind = "lsc", state = states.ONLINE,
+        stored = 1100, capacity = 2000, percent = 0.55, net = 0,
+        tracker = tracker,
+    })
+    eq("the graph fills one column per sample", plottedCard.graphColumns[10].alpha, 1)
+    eq("the graph leaves unused columns hidden", plottedCard.graphColumns[11].alpha, 0)
+    eq("the graph names its window", plottedCard.graph.caption.text, "Charge · last 10 min")
+    eq("the graph labels its max", plottedCard.graph.maxLabel.text, "1.1k EU")
+    eq("the graph labels its min", plottedCard.graph.minLabel.text, "1.0k EU")
+    plottedCard:remove()
+
+    local flatTracker = metrics.new(metrics.intervalFor(600))
+    for i = 1, 10 do metrics.update(flatTracker, 500, i * 5) end
+    local flatCard = arPanel.new(fakeGlasses(), configuration.glassesDefaults(), theme, viewport)
+    flatCard:update({
+        name = "Main LSC", kind = "lsc", state = states.ONLINE,
+        stored = 500, capacity = 1000, percent = 0.5, net = 0,
+        tracker = flatTracker,
+    })
+    local flatColumn = flatCard.graphColumns[1]
+    near("a flat graph is centred at half height",
+        flatColumn.vertices[2][2] - flatColumn.vertices[1][2],
+        flatCard.graph.plotHeight / 2)
+    flatCard:remove()
 end
 
 -- AR compact panel layout -------------------------------------------------------
