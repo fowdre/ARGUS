@@ -153,27 +153,46 @@ end
 
 print("ARGUS installer — " .. repo .. "@" .. branch)
 
-local SETTINGS_DIR = INSTALL_DIR .. "/settings"
-local CONFIG_FILE = SETTINGS_DIR .. "/config"
+local CONFIG_DIR = "/home/.argus"
+local CONFIG_FILE = CONFIG_DIR .. "/argus.cfg"
 local CONFIG_BACKUP = "/tmp/argus-config"
+local LEGACY_CONFIG_FILE = INSTALL_DIR .. "/settings/config"
 
 -- filesystem.copy handles FILES ONLY. OpenOS implements it as
 --     local input = filesystem.open(fromPath, "rb")
 -- which fails on a directory, so copy returns false and copies nothing —
--- without raising. Passing it `settings/` therefore did nothing at all, and the
--- wipe that followed took the settings with it. Copy the config file itself.
+-- without raising. Passing it a settings directory therefore did nothing at
+-- all, and the wipe that followed took the settings with it. Copy the config
+-- file itself.
 local function stashConfig(from)
     if not filesystem.exists(from) then return false end
     filesystem.remove(CONFIG_BACKUP)
     return filesystem.copy(from, CONFIG_BACKUP) and true or false
 end
 
+local function ensureConfigDir()
+    if not filesystem.exists(CONFIG_DIR) then
+        filesystem.makeDirectory(CONFIG_DIR)
+    end
+end
+
 local function restoreConfig()
     if not filesystem.exists(CONFIG_BACKUP) then return false end
-    filesystem.makeDirectory(SETTINGS_DIR)
+    ensureConfigDir()
     local ok = filesystem.copy(CONFIG_BACKUP, CONFIG_FILE)
     filesystem.remove(CONFIG_BACKUP)
     return ok and true or false
+end
+
+local function migrateConfig()
+    if filesystem.exists(CONFIG_FILE) then return false end
+    if not filesystem.exists(LEGACY_CONFIG_FILE) then return false end
+    ensureConfigDir()
+    return filesystem.copy(LEGACY_CONFIG_FILE, CONFIG_FILE) and true or false
+end
+
+local function hasConfig()
+    return filesystem.exists(CONFIG_FILE) or filesystem.exists(LEGACY_CONFIG_FILE)
 end
 
 -- Move an install made under the app's previous name. Left alone, the old tree
@@ -182,7 +201,7 @@ end
 local LEGACY_DIR = "/home/EMON"
 if filesystem.exists(LEGACY_DIR) and LEGACY_DIR ~= INSTALL_DIR then
     print("Found a previous install at " .. LEGACY_DIR)
-    if not filesystem.exists(CONFIG_FILE) and stashConfig(LEGACY_DIR .. "/settings/config") then
+    if not hasConfig() and stashConfig(LEGACY_DIR .. "/settings/config") then
         if restoreConfig() then print("  settings carried over") end
     end
     filesystem.remove(LEGACY_DIR)
@@ -204,11 +223,15 @@ if filesystem.exists(LEGACY_DIR) and LEGACY_DIR ~= INSTALL_DIR then
     end
 end
 
+if migrateConfig() then
+    print("Settings migrated to " .. CONFIG_FILE)
+end
+
 -- Wipe first when asked. A file that a newer layout no longer downloads would
 -- otherwise sit there forever, and a half-updated tree fails in confusing ways
 -- (a function that exists in the repo reported as nil).
 if options.clean then
-    local kept = stashConfig(CONFIG_FILE)
+    local kept = stashConfig(CONFIG_FILE) or stashConfig(LEGACY_CONFIG_FILE)
     print("Removing " .. INSTALL_DIR .. (kept and " (settings kept)" or ""))
     filesystem.remove(INSTALL_DIR)
     filesystem.makeDirectory(INSTALL_DIR)
@@ -256,16 +279,13 @@ if #failed > 0 then
     return
 end
 
--- Settings live under the install dir and are never fetched, so a reinstall
--- keeps the user's configuration.
-if not filesystem.exists(SETTINGS_DIR) then
-    filesystem.makeDirectory(SETTINGS_DIR)
-end
+ensureConfigDir()
 
 -- Record what was installed. Without this there is no way to tell a stale
 -- install from a fresh one — every build reports the same version string, and
 -- a mirror can serve a cached copy of a branch for hours without saying so.
-local stamp = io.open(SETTINGS_DIR .. "/installed", "w")
+ensureDirectory(INSTALL_DIR .. "/installed")
+local stamp = io.open(INSTALL_DIR .. "/installed", "w")
 if stamp then
     stamp:write(branch .. "\n" .. mirror.name .. "\n")
     stamp:close()

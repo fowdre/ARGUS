@@ -51,8 +51,8 @@ are not — hence a mix of new and old code after an update. Both entry points c
 namespaces from `package.loaded` — when adding new namespaces, **update the lists there**.
 
 **`filesystem.copy` handles files only.** It is implemented as `filesystem.open(from, "rb")`
-— on a directory it silently returns `false`. Copying `settings/` as a directory = losing the
-settings without a single error.
+— on a directory it silently returns `false`. Copying a directory (as the old `settings/`
+layout did) = losing the settings without a single error.
 
 **Lua numbers are doubles.** Above 2^53 (~9·10¹⁵) the exact value isn't representable. Charge
 is stored both as a number (for math) and as an **exact decimal string** from the sensor (for

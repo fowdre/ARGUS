@@ -90,7 +90,7 @@ saved automatically — press `Save`. Quit with `Quit` or `Ctrl+C`.
 | **Crafting** | ME network crafts: CPUs, chain of the selected one, stalled jobs. |
 | **Network** | Server/client mode, network key, port, list of connected bases. |
 | **Settings** | Graph window (30 s … a full day, preset or exact seconds) and app updates: auto-check and “Check for updates”. |
-| **Save** | Saves settings to `/home/ARGUS/settings/config`. |
+| **Save** | Saves settings to `/home/.argus/argus.cfg`. |
 
 **Buffer states:** `ONLINE` — energy flowing · `IDLE` — available but not moving ·
 `OFF` — work disabled · `PROBLEM` — needs maintenance · `MISSING` — component unavailable.

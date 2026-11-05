@@ -1114,8 +1114,9 @@ function app:drawCrafting(width, rows, theme)
 
     if not self.craft then
         graphics.text(2, 4, "Crafting monitoring is switched off in the config.", theme.muted, true)
-        graphics.text(2, 5, "Set craft.enabled = true in settings/config and restart.",
+        graphics.text(2, 5, "Set craft.enabled = true in /home/.argus/argus.cfg",
             theme.muted, true)
+        graphics.text(2, 6, "and restart.", theme.muted, true)
         return
     end
 

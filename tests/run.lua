@@ -831,8 +831,11 @@ do
     eq("an old glasses entry gains the default card size",
         configuration.glassesFor(oldData, "old-glasses").panelScale, 100)
 
-    -- 100% must be exactly the original layout.
+    -- 100% must be exactly the original layout. The graph is folded here so
+    -- these checks still describe the original 34-unit strip; the expanded card
+    -- gets its own section below.
     local full = configuration.glassesDefaults()
+    full.graphHidden = true
     local fullCard = arPanel.new(fakeGlasses(), full, theme, viewport)
     eq("100% keeps the original card width", fullCard.width, 190)
     eq("100% keeps the original card height", fullCard.height, 34)
@@ -2578,6 +2581,40 @@ do
     fakeTypes["glasses-pin"] = nil
 end
 
+-- Config location
+
+do
+    eq("settings live outside the install tree",
+        configuration.path, "/home/.argus/argus.cfg")
+    check("the settings path is not under the install directory",
+        configuration.path:sub(1, #"/home/ARGUS/") ~= "/home/ARGUS/")
+
+    local newPath = os.tmpname()
+    local legacyPath = os.tmpname()
+    os.remove(newPath)
+    local legacy = assert(io.open(legacyPath, "w"))
+    legacy:write("{screen={graphWindow=120}}")
+    legacy:close()
+
+    local savedPath, savedLegacy = configuration.path, configuration.legacyPath
+    configuration.path = newPath
+    configuration.legacyPath = legacyPath
+
+    local ok, loaded = pcall(configuration.load)
+
+    configuration.path = savedPath
+    configuration.legacyPath = savedLegacy
+
+    check("a legacy config loads after the move", ok, tostring(loaded))
+    if ok then
+        eq("the migrated config keeps its values", loaded.screen.graphWindow, 120)
+    end
+
+    os.remove(newPath)
+    os.remove(newPath .. ".tmp")
+    os.remove(legacyPath)
+end
+
 -- Installer manifest -----------------------------------------------------------
 --
 -- setup.lua lists every file to download. A module that exists in the repo but
@@ -2608,6 +2645,9 @@ if manifestSource then
     local block = source:match("local FILES = {(.-)\n}")
     for path in (block or ""):gmatch('"([^"]+)"') do manifest[path] = true end
     check("setup.lua declares a file list", next(manifest) ~= nil)
+
+    eq("setup.lua uses the same settings directory",
+        source:match('local CONFIG_DIR = "([^"]+)"'), "/home/.argus")
 
     -- Every declared file must exist.
     for path in pairs(manifest) do

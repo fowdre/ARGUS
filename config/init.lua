@@ -13,8 +13,10 @@ local util = require("core.util")
 local config = {}
 
 config.VERSION = 1
-config.directory = "/home/ARGUS/settings"
-config.path = config.directory .. "/config"
+config.directory = "/home/.argus"
+config.path = config.directory .. "/argus.cfg"
+config.legacyPath = "/home/ARGUS/settings/config"
+config.installStamp = "/home/ARGUS/installed"
 
 local function defaults()
     return {
@@ -255,18 +257,29 @@ local function merge(stored, base)
     return stored
 end
 
+local function readConfig(path)
+    local file = io.open(path, "r")
+    if not file then return nil end
+    local contents = file:read("*a")
+    file:close()
+    local ok, parsed = pcall(serialization.unserialize, contents)
+    if ok and type(parsed) == "table" then return parsed end
+    return nil
+end
+
 function config.load()
-    local data
-    local file = io.open(config.path, "r")
-    if file then
-        local contents = file:read("*a")
-        file:close()
-        local ok, parsed = pcall(serialization.unserialize, contents)
-        if ok and type(parsed) == "table" then data = parsed end
+    local data = readConfig(config.path)
+    local migrated = false
+    if not data then
+        data = readConfig(config.legacyPath)
+        migrated = data ~= nil
     end
     data = merge(data, defaults())
     data.buffers = data.buffers or {}
     data.glasses = data.glasses or {}
+
+    if migrated then pcall(config.save, data) end
+
     return data
 end
 
@@ -294,7 +307,7 @@ end
 -- came from. Returns nil when ARGUS was installed some other way (files copied
 -- straight onto the disk, for instance).
 function config.installedRef()
-    local file = io.open(config.directory .. "/installed", "r")
+    local file = io.open(config.installStamp, "r")
     if not file then return nil end
     local ref = file:read("*l")
     file:close()
