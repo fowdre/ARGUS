@@ -389,7 +389,11 @@ function panel:updateGraph(view, now)
             format.window(math.floor(interval * GRAPH_SAMPLES + 0.5)))
     end
 
-    local key = tostring(series.count) .. ":" .. tostring(series.head)
+    local capacity = tonumber(view.capacity)
+    local fixedMax = (capacity and capacity > 0) and capacity or nil
+    local scaleKey = fixedMax and ("fixed:" .. tostring(fixedMax)) or "auto"
+
+    local key = tostring(series.count) .. ":" .. tostring(series.head) .. ":" .. scaleKey
     local trackerChanged = graph.tracker ~= tracker
     if not trackerChanged and graph.key == key then return end
 
@@ -446,13 +450,19 @@ function panel:updateGraph(view, now)
     setMessage("")
 
     local span = max - min
-    local flat = span <= 0
     local bottom = graph.plotY + graph.plotHeight
     local step = graph.plotWidth / GRAPH_COLUMNS
     local muted = screen.blend(self.theme.muted, self.theme.background, GRAPH_MUTED_BLEND)
 
     local function heightFor(value)
-        local fraction = flat and 0.5 or (value - min) / span
+        local fraction
+        if fixedMax then
+            fraction = value / fixedMax
+            if fraction < 0 then fraction = 0
+            elseif fraction > 1 then fraction = 1 end
+        else
+            fraction = (span <= 0) and 0.5 or (value - min) / span
+        end
         return math.max(1, math.floor(fraction * graph.plotHeight + 0.5))
     end
 
@@ -535,7 +545,11 @@ function panel:updateGraph(view, now)
         end
     end
 
-    setBounds(format.compact(max), format.compact(min))
+    if fixedMax then
+        setBounds(format.compact(fixedMax), format.compact(0))
+    else
+        setBounds(format.compact(max), format.compact(min))
+    end
 end
 
 function panel:update(view, cycling, now)

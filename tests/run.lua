@@ -993,23 +993,72 @@ do
     eq("the graph fills its newest columns", plottedCard.graphColumns[60].alpha, 1)
     eq("the graph leaves unused columns hidden", plottedCard.graphColumns[55].alpha, 0)
     eq("the graph names its window", plottedCard.graph.caption.text, "Charge · last 10 min")
-    eq("the graph labels its max", plottedCard.graph.maxLabel.text, "1.1k EU")
-    eq("the graph labels its min", plottedCard.graph.minLabel.text, "1.0k EU")
+    eq("a fixed graph labels its top", plottedCard.graph.maxLabel.text, "2.0k EU")
+    eq("a fixed graph labels its bottom", plottedCard.graph.minLabel.text, "0 EU")
     plottedCard:remove()
 
     local flatTracker = metrics.new(metrics.intervalFor(600))
     for i = 1, 10 do metrics.update(flatTracker, 500, i * 5) end
     local flatCard = arPanel.new(fakeGlasses(), configuration.glassesDefaults(), theme, viewport)
-    flatCard:update({
+    local flatView = {
         name = "Main LSC", kind = "lsc", state = states.ONLINE,
         stored = 500, capacity = 1000, percent = 0.5, net = 0,
         tracker = flatTracker,
-    })
+    }
+    flatCard:update(flatView)
     local flatColumn = flatCard.graphColumns[60]
-    near("a flat graph is centred at half height",
+    near("a flat graph at half capacity is half height",
         flatColumn.vertices[2][2] - flatColumn.vertices[1][2],
         flatCard.graph.plotHeight / 2)
+    eq("a fixed graph labels half capacity's top", flatCard.graph.maxLabel.text, "1.0k EU")
+    eq("a fixed graph labels its zero", flatCard.graph.minLabel.text, "0 EU")
+
+    -- A capacity change rescales immediately, without waiting for a sample.
+    flatView.capacity = 500
+    flatCard:update(flatView)
+    local rescaled = flatCard.graphColumns[60]
+    near("a capacity change rescales the graph",
+        rescaled.vertices[2][2] - rescaled.vertices[1][2],
+        flatCard.graph.plotHeight)
+    eq("the new capacity becomes the top label", flatCard.graph.maxLabel.text, "500 EU")
+
+    -- Anything above capacity pins to the top instead of overflowing.
+    flatView.capacity = 400
+    flatCard:update(flatView)
+    local clamped = flatCard.graphColumns[60]
+    near("values above capacity clamp to the top",
+        clamped.vertices[2][2] - clamped.vertices[1][2],
+        flatCard.graph.plotHeight)
     flatCard:remove()
+
+    local fullTracker = metrics.new(metrics.intervalFor(600))
+    for i = 1, 10 do metrics.update(fullTracker, 1000, i * 5) end
+    local fullCard = arPanel.new(fakeGlasses(), configuration.glassesDefaults(), theme, viewport)
+    fullCard:update({
+        name = "Main LSC", kind = "lsc", state = states.ONLINE,
+        stored = 1000, capacity = 1000, percent = 1, net = 0,
+        tracker = fullTracker,
+    })
+    local fullColumn = fullCard.graphColumns[60]
+    near("a full buffer fills the graph",
+        fullColumn.vertices[2][2] - fullColumn.vertices[1][2],
+        fullCard.graph.plotHeight)
+    fullCard:remove()
+
+    -- Wireless views have no capacity, so auto-scale and min/max labels remain.
+    local wirelessCard = arPanel.new(fakeGlasses(), configuration.glassesDefaults(), theme, viewport)
+    wirelessCard:update({
+        name = "Wireless", kind = "wireless", state = states.ONLINE,
+        stored = 500, capacity = 0, percent = nil, net = 0,
+        tracker = flatTracker,
+    })
+    eq("a capacity-less graph keeps its auto-scale top", wirelessCard.graph.maxLabel.text, "500 EU")
+    eq("a capacity-less graph keeps its auto-scale bottom", wirelessCard.graph.minLabel.text, "500 EU")
+    local wirelessColumn = wirelessCard.graphColumns[60]
+    near("a capacity-less flat graph is centred",
+        wirelessColumn.vertices[2][2] - wirelessColumn.vertices[1][2],
+        wirelessCard.graph.plotHeight / 2)
+    wirelessCard:remove()
 
     local regainTracker = metrics.new(metrics.intervalFor(600))
     for i = 1, 10 do metrics.update(regainTracker, 500 + i, i * 5) end
