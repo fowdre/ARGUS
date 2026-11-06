@@ -128,18 +128,19 @@ end
 -- Records every object created on it, so the AR panel can be inspected without
 -- a pair of glasses. Mirrors the OpenGlasses API surface ARGUS actually uses.
 local function fakeGlasses()
-    local glasses = {objects = {}, nextId = 0}
+    local glasses = {objects = {}, nextId = 0, calls = 0}
+    local function bump() glasses.calls = glasses.calls + 1 end
     local function newObject(kind)
         glasses.nextId = glasses.nextId + 1
         local id = glasses.nextId
         local object = {kind = kind, id = id, vertices = {}, scale = 1, alpha = 1}
-        object.setColor = function(r, g, b) object.color = {r, g, b} end
-        object.setAlpha = function(a) object.alpha = a end
-        object.setVertex = function(i, x, y) object.vertices[i] = {x, y} end
-        object.setText = function(s) object.text = s end
-        object.setPosition = function(x, y) object.position = {x, y} end
+        object.setColor = function(r, g, b) bump() object.color = {r, g, b} end
+        object.setAlpha = function(a) bump() object.alpha = a end
+        object.setVertex = function(i, x, y) bump() object.vertices[i] = {x, y} end
+        object.setText = function(s) bump() object.text = s end
+        object.setPosition = function(x, y) bump() object.position = {x, y} end
         object.getPosition = function() return object.position[1], object.position[2] end
-        object.setScale = function(s) object.scale = s end
+        object.setScale = function(s) bump() object.scale = s end
         object.getScale = function() return object.scale end
         object.getID = function() return id end
         glasses.objects[id] = object
@@ -148,10 +149,10 @@ local function fakeGlasses()
     -- The glasses proxy is a component proxy, so its own methods are callable
     -- tables like any other. (The widget objects it returns are plain value
     -- tables, which is why NIDAS and ARGUS call them with `.`.)
-    glasses.addQuad = method(function() return newObject("quad") end)
-    glasses.addTextLabel = method(function() return newObject("text") end)
-    glasses.removeObject = method(function(id) glasses.objects[id] = nil end)
-    glasses.removeAll = method(function() glasses.objects = {} end)
+    glasses.addQuad = method(function() bump() return newObject("quad") end)
+    glasses.addTextLabel = method(function() bump() return newObject("text") end)
+    glasses.removeObject = method(function(id) bump() glasses.objects[id] = nil end)
+    glasses.removeAll = method(function() bump() glasses.objects = {} end)
     glasses.getBindPlayers = method(function() return "Tester" end)
     return glasses
 end
@@ -929,7 +930,7 @@ do
     local graphGlasses = fakeGlasses()
     local graphCard = arPanel.new(graphGlasses, configuration.glassesDefaults(), theme, viewport)
     eq("the default graph card is 62 units tall", graphCard.height, 62)
-    eq("the graph allocates one column per sample", #graphCard.graphColumns, 120)
+    eq("the graph allocates its draw columns", #graphCard.graphColumns, 60)
     eq("the graph arrow maps to the graph action",
         graphCard:hitTest(graphCard.x + graphCard.width - 7, graphCard.y + 17.5), "graph")
 
@@ -979,8 +980,8 @@ do
             compactGraphCard.y + 17.5), nil)
     compactGraphCard:remove()
 
-    -- window caption derived from the tracker.
     -- A real series: newest on the right, unused columns hidden, bounds and the
+    -- window caption derived from the tracker.
     local tracker = metrics.new(metrics.intervalFor(600))
     for i = 1, 10 do metrics.update(tracker, 1000 + i * 10, i * 5) end
     local plottedCard = arPanel.new(fakeGlasses(), configuration.glassesDefaults(), theme, viewport)
@@ -989,8 +990,8 @@ do
         stored = 1100, capacity = 2000, percent = 0.55, net = 0,
         tracker = tracker,
     })
-    eq("the graph fills one column per sample", plottedCard.graphColumns[10].alpha, 1)
-    eq("the graph leaves unused columns hidden", plottedCard.graphColumns[11].alpha, 0)
+    eq("the graph fills its newest columns", plottedCard.graphColumns[60].alpha, 1)
+    eq("the graph leaves unused columns hidden", plottedCard.graphColumns[55].alpha, 0)
     eq("the graph names its window", plottedCard.graph.caption.text, "Charge · last 10 min")
     eq("the graph labels its max", plottedCard.graph.maxLabel.text, "1.1k EU")
     eq("the graph labels its min", plottedCard.graph.minLabel.text, "1.0k EU")
@@ -1004,11 +1005,50 @@ do
         stored = 500, capacity = 1000, percent = 0.5, net = 0,
         tracker = flatTracker,
     })
-    local flatColumn = flatCard.graphColumns[1]
+    local flatColumn = flatCard.graphColumns[60]
     near("a flat graph is centred at half height",
         flatColumn.vertices[2][2] - flatColumn.vertices[1][2],
         flatCard.graph.plotHeight / 2)
     flatCard:remove()
+
+    local regainTracker = metrics.new(metrics.intervalFor(600))
+    for i = 1, 10 do metrics.update(regainTracker, 500 + i, i * 5) end
+    local regainCard = arPanel.new(fakeGlasses(), configuration.glassesDefaults(), theme, viewport)
+    local regainView = {
+        name = "Main LSC", kind = "lsc", state = states.ONLINE,
+        stored = 500, capacity = 1000, percent = 0.5, net = 0,
+        tracker = regainTracker,
+    }
+    regainCard:update(regainView)
+    regainCard:update({
+        name = "Main LSC", kind = "lsc", state = states.ONLINE,
+        stored = 500, capacity = 1000, percent = 0.5, net = 0,
+    })
+    eq("the graph hides when the tracker disappears", regainCard.graphColumns[60].alpha, 0)
+    regainCard:update(regainView)
+    eq("the graph returns when the tracker comes back", regainCard.graphColumns[60].alpha, 1)
+    regainCard:remove()
+
+    local perfTracker = metrics.new(metrics.intervalFor(600))
+    for i = 1, 120 do metrics.update(perfTracker, 1000 + (i % 20) * 10, i * 5) end
+    local perfGlasses = fakeGlasses()
+    local perfCard = arPanel.new(perfGlasses, configuration.glassesDefaults(), theme, viewport)
+    local perfView = {
+        name = "Main LSC", kind = "lsc", state = states.ONLINE,
+        stored = 1000, capacity = 2000, percent = 0.5, net = 0,
+        tracker = perfTracker,
+    }
+    perfGlasses.calls = 0
+    perfCard:update(perfView)
+    check("the first full graph paint is bounded", perfGlasses.calls < 500,
+        tostring(perfGlasses.calls))
+
+    metrics.update(perfTracker, 999, 605)
+    perfGlasses.calls = 0
+    perfCard:update(perfView)
+    check("a steady graph repaint only touches changed columns",
+        perfGlasses.calls < 250, tostring(perfGlasses.calls))
+    perfCard:remove()
 end
 
 -- AR compact panel layout -------------------------------------------------------
@@ -1161,6 +1201,25 @@ near("hud rebuilds the card when its size changes",
 glassesSettings.panelScale = 100
 hud:update(monitor)
 near("hud restores the card at 100%", hud.panels["glasses-1"].instance.width, 190)
+
+-- Graph-only settings are debounced: the old card survives the first pass, and
+-- one rebuild lands after the user stops clicking.
+local beforeGraph = hud.panels["glasses-1"].instance
+glassesSettings.graphHeight = 36
+hud:update(monitor)
+eq("a graph-height change waits for the debounce",
+    hud.panels["glasses-1"].instance, beforeGraph)
+clock = clock + 1
+hud:update(monitor)
+eq("the graph-height rebuild lands after the debounce",
+    hud.panels["glasses-1"].instance.height, 74)
+
+glassesSettings.graphHeight = 24
+hud:update(monitor)
+clock = clock + 1
+hud:update(monitor)
+eq("the graph height returns to the default",
+    hud.panels["glasses-1"].instance.height, 62)
 
 local card = hud.panels["glasses-1"].instance
 eq("‹ maps to prev", card:hitTest(card.x + 8, card.y + 5), "prev")

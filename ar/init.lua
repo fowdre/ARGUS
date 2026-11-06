@@ -46,6 +46,8 @@ local GLASSES_RESCAN_INTERVAL = 2
 local HUD_SETTLE_SECONDS = 10
 local HUD_RESUME_GAP_SECONDS = 30
 
+local REBUILD_DELAY = 0.3
+
 function hud.new(config)
     local now = computer.uptime()
     return setmetatable({
@@ -61,6 +63,7 @@ function hud.new(config)
         cleared = {},
         addresses = {},
         addressesAt = nil,
+        pendingRebuilds = {},
         -- ScaledResolution reported by glasses_on, per glasses address. This is
         -- authoritative: it is the space hud_click coordinates arrive in, so the
         -- hit boxes only line up if the card is laid out in the same one.
@@ -114,14 +117,21 @@ function hud:resolution(address, settings)
 end
 
 -- Any change here means the existing objects are wrong and must be recreated.
-local function signature(settings, resolution)
+local function baseSignature(settings, resolution)
     return table.concat({
         tostring(settings.enabled), tostring(settings.compact), tostring(settings.panelScale or 100),
-        tostring(settings.graphHeight or arPanel.GRAPH_HEIGHT_DEFAULT),
-        tostring(settings.graphHidden),
         tostring(settings.anchor), tostring(settings.offsetX), tostring(settings.offsetY),
         tostring(resolution[1]), tostring(resolution[2]),
     }, "|")
+end
+
+local function graphSignature(settings)
+    return tostring(settings.graphHeight or arPanel.GRAPH_HEIGHT_DEFAULT)
+        .. "|" .. tostring(settings.graphHidden)
+end
+
+local function signature(settings, resolution)
+    return baseSignature(settings, resolution) .. "|" .. graphSignature(settings)
 end
 
 -- The crafting card's own rebuild trigger. `rows` is in here because row objects
@@ -165,6 +175,7 @@ function hud:drop(address)
     -- The glasses may already be gone; tearing down must not take the app with it.
     pcall(function() panel.instance:remove() end)
     self.panels[address] = nil
+    self.pendingRebuilds[address] = nil
 end
 
 function hud:dropCraft(address)
@@ -303,14 +314,27 @@ function hud:update(monitor, craftMonitor, stockMonitor)
         local resolution = self:resolution(address, settings)
         local current = self.panels[address]
         local wanted = signature(settings, resolution)
+        local wantedBase = baseSignature(settings, resolution)
 
         -- Independent of settings.enabled below: that switch owns the energy
         -- card only, so a player can wear the crafting or stock card on its own.
         self:updateCraft(address, settings, resolution, craftMonitor)
 
         if current and current.signature ~= wanted then
-            self:drop(address)
-            current = nil
+            if not settings.enabled or current.baseSignature ~= wantedBase then
+                self:drop(address)
+                current = nil
+            else
+                local pending = self.pendingRebuilds[address]
+                if not pending or pending.signature ~= wanted then
+                    self.pendingRebuilds[address] = {signature = wanted, since = now}
+                elseif (now - pending.since) >= REBUILD_DELAY then
+                    self:drop(address)
+                    current = nil
+                end
+            end
+        elseif current then
+            self.pendingRebuilds[address] = nil
         end
 
         if not settings.enabled then
@@ -327,6 +351,7 @@ function hud:update(monitor, craftMonitor, stockMonitor)
                             instance = instance,
                             proxy = proxy,
                             signature = wanted,
+                            baseSignature = wantedBase,
                             cycleIndex = 1,
                             lastSwitch = now,
                         }
@@ -337,7 +362,7 @@ function hud:update(monitor, craftMonitor, stockMonitor)
 
             if current then
                 local view = self:selectView(address, settings, monitor, now)
-                local ok = pcall(function() current.instance:update(view, settings.cycle) end)
+                local ok = pcall(function() current.instance:update(view, settings.cycle, now) end)
                 -- Glasses unplugged mid-frame: forget the panel and let the next
                 -- pass rebuild it if they come back.
                 if not ok then self:drop(address) end

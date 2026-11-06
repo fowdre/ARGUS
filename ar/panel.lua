@@ -3,7 +3,8 @@
 -- Same information as the on-screen panel, condensed into a card that does not
 -- fight the game view. Redesigned rather than ported: NIDAS drew a full-width
 -- bar welded to the bottom of the screen with a dozen chrome quads and an
--- animated charge pulse. This is a compact card with one bar and four fields.
+-- animated charge pulse. This is a compact card with one bar, four fields, and
+-- an optional charge-history graph.
 --
 -- Glasses objects are created ONCE and mutated per tick. Recreating them every
 -- frame leaks objects into the glasses until it chokes — the AR API has no
@@ -37,7 +38,11 @@ local COMPACT_RATE_CHARS = 12
 local COMPACT_PROJECTION_CHARS = 17
 local COMPACT_STATE_CHARS = 11
 
-local GRAPH_COLUMNS = 120
+local GRAPH_SAMPLES = 120
+local GRAPH_COLUMNS = 60
+local GRAPH_SAMPLES_PER_COLUMN = GRAPH_SAMPLES / GRAPH_COLUMNS
+local GRAPH_PAINT_INTERVAL = 0.5
+
 local GRAPH_HEIGHT_DEFAULT = 24
 local GRAPH_HEIGHT_MIN = 8
 local GRAPH_HEIGHT_MAX = 48
@@ -238,6 +243,11 @@ function panel.new(glasses, settings, theme, resolution)
             plotY = y + GRAPH_PLOT_Y * scale,
             plotWidth = GRAPH_PLOT_WIDTH * scale,
             plotHeight = plotHeight * scale,
+            values = {},
+            columnHeight = {},
+            columnX0 = {},
+            columnX1 = {},
+            visibleColumns = 0,
         }
         graph.caption = ar.text(glasses, "",
             {x + GRAPH_PLOT_X * scale, y + GRAPH_CAPTION_Y * scale},
@@ -255,8 +265,7 @@ function panel.new(glasses, settings, theme, resolution)
         self.graph = graph
 
         for i = 1, GRAPH_COLUMNS do
-            self.graphColumns[i] = ar.rectangle(glasses,
-                {graph.plotX, graph.plotY + graph.plotHeight}, 0, 0, theme.primary, 0)
+            self.graphColumns[i] = ar.quad(glasses)
         end
     end
 
@@ -321,66 +330,120 @@ function panel:setBar(fraction, color)
     end
 end
 
-function panel:updateGraph(view)
+function panel:updateGraph(view, now)
     local graph = self.graph
     if not graph then return end
 
-    local function hideColumns(from)
-        for i = from or 1, #self.graphColumns do
-            self.graphColumns[i].setAlpha(0)
+    local function setMessage(value)
+        if graph.messageText ~= value then
+            graph.message.setText(value)
+            graph.messageText = value
+        end
+    end
+
+    local function setBounds(maxText, minText)
+        local labelRight = self.x + (GRAPH_LABEL_X + GRAPH_LABEL_WIDTH) * self.scale
+        local labelWidth = GRAPH_LABEL_SCALE * self.scale * 6
+        local labelTop = self.y + GRAPH_PLOT_Y * self.scale
+        if maxText ~= graph.maxText then
+            graph.maxLabel.setText(maxText)
+            graph.maxLabel.setPosition(labelRight - text.len(maxText) * labelWidth, labelTop)
+            graph.maxText = maxText
+        end
+        if minText ~= graph.minText then
+            graph.minLabel.setText(minText)
+            graph.minLabel.setPosition(labelRight - text.len(minText) * labelWidth,
+                labelTop + graph.plotHeight - 5 * self.scale)
+            graph.minText = minText
+        end
+    end
+
+    local function hideAll()
+        if graph.visibleColumns ~= 0 then
+            for i = 1, GRAPH_COLUMNS do
+                if graph.columnHeight[i] then
+                    self.graphColumns[i].setAlpha(0)
+                    graph.columnHeight[i] = nil
+                end
+            end
+            graph.visibleColumns = 0
+            graph.laidOutStart = nil
         end
     end
 
     local tracker = view.tracker
     if not tracker then
-        hideColumns()
-        graph.message.setText("collecting data…")
-        graph.maxLabel.setText("")
-        graph.minLabel.setText("")
+        graph.tracker, graph.key = nil, nil
+        hideAll()
+        setMessage("collecting data…")
+        setBounds("", "")
         return
     end
 
     local series = metrics.series(tracker)
     local interval = tracker.graphInterval or 0
 
-    if self.graphInterval ~= interval then
-        self.graphInterval = interval
+    if graph.interval ~= interval then
+        graph.interval = interval
         graph.caption.setText("Charge · last " ..
-            format.window(math.floor(interval * GRAPH_COLUMNS + 0.5)))
+            format.window(math.floor(interval * GRAPH_SAMPLES + 0.5)))
     end
 
     local key = tostring(series.count) .. ":" .. tostring(series.head)
-    if self.graphTracker == tracker and self.graphKey == key then return end
-    self.graphTracker, self.graphKey = tracker, key
+    local trackerChanged = graph.tracker ~= tracker
+    if not trackerChanged and graph.key == key then return end
+
+    if now and graph.lastPaint and (now - graph.lastPaint) < GRAPH_PAINT_INTERVAL then
+        return
+    end
+    graph.tracker, graph.key, graph.lastPaint = tracker, key, now
+
+    if trackerChanged then
+        graph.visibleColumns = -1 -- forces a full layout below
+        graph.maxText, graph.minText = nil, nil
+    end
 
     local count = series.count
     if count < 2 then
-        hideColumns()
-        graph.message.setText("collecting data…")
-        graph.maxLabel.setText("")
-        graph.minLabel.setText("")
+        hideAll()
+        setMessage("collecting data…")
+        setBounds("", "")
         return
     end
 
-    local visible = math.min(count, GRAPH_COLUMNS)
-    local first = count - visible + 1
+    local samples = math.min(count, GRAPH_SAMPLES)
+    local first = count - samples + 1
+    local columns = math.min(GRAPH_COLUMNS, math.ceil(samples / GRAPH_SAMPLES_PER_COLUMN))
+    local startColumn = GRAPH_COLUMNS - columns + 1
+
+    local values = graph.values
     local min, max
-    for i = first, count do
-        local _, value = series:get(i)
+    for column = 1, columns do
+        local from = first + (column - 1) * GRAPH_SAMPLES_PER_COLUMN
+        local to = math.min(from + GRAPH_SAMPLES_PER_COLUMN - 1, count)
+        local sum, n = 0, 0
+        for i = from, to do
+            local _, value = series:get(i)
+            if value then
+                sum = sum + value
+                n = n + 1
+            end
+        end
+        local value = n > 0 and (sum / n) or nil
+        values[column] = value
         if value then
             if not min or value < min then min = value end
             if not max or value > max then max = value end
         end
     end
+
     if not min then
-        hideColumns()
-        graph.message.setText("collecting data…")
-        graph.maxLabel.setText("")
-        graph.minLabel.setText("")
+        hideAll()
+        setMessage("collecting data…")
+        setBounds("", "")
         return
     end
-
-    graph.message.setText("")
+    setMessage("")
 
     local span = max - min
     local flat = span <= 0
@@ -388,40 +451,94 @@ function panel:updateGraph(view)
     local step = graph.plotWidth / GRAPH_COLUMNS
     local muted = screen.blend(self.theme.muted, self.theme.background, GRAPH_MUTED_BLEND)
 
-    for i = 1, visible do
-        local _, value = series:get(first + i - 1)
-        if value == nil then
-            self.graphColumns[i].setAlpha(0)
-        else
-            local fraction = flat and 0.5 or (value - min) / span
-            local barHeight = math.max(1, math.floor(fraction * graph.plotHeight + 0.5))
-            local x0 = graph.plotX + (i - 1) * step
-            local x1 = graph.plotX + i * step
-            local y0 = bottom - barHeight
-            local column = self.graphColumns[i]
+    local function heightFor(value)
+        local fraction = flat and 0.5 or (value - min) / span
+        return math.max(1, math.floor(fraction * graph.plotHeight + 0.5))
+    end
 
-            column.setVertex(1, x0, y0)
-            column.setVertex(2, x0, bottom)
-            column.setVertex(3, x1, bottom)
-            column.setVertex(4, x1, y0)
-            column.setColor(screen.toRGB(screen.blend(muted, self.theme.primary, fraction)))
-            column.setAlpha(1)
+    local function paintColumn(index, height)
+        local x0 = graph.columnX0[index]
+        local x1 = graph.columnX1[index]
+        if not x0 then
+            x0 = graph.plotX + (index - 1) * step
+            x1 = x0 + step
+            graph.columnX0[index], graph.columnX1[index] = x0, x1
+        end
+        local y0 = bottom - height
+        local column = self.graphColumns[index]
+        column.setVertex(1, x0, y0)
+        column.setVertex(2, x0, bottom)
+        column.setVertex(3, x1, bottom)
+        column.setVertex(4, x1, y0)
+        column.setColor(screen.toRGB(screen.blend(muted, self.theme.primary,
+            height / graph.plotHeight)))
+        column.setAlpha(1)
+        graph.columnHeight[index] = height
+    end
+
+    local layoutChanged = graph.visibleColumns ~= columns
+        or graph.laidOutStart ~= startColumn
+
+    if layoutChanged then
+        for i = 1, startColumn - 1 do
+            if graph.columnHeight[i] then
+                self.graphColumns[i].setAlpha(0)
+                graph.columnHeight[i] = nil
+            end
+        end
+        for i = startColumn + columns, GRAPH_COLUMNS do
+            if graph.columnHeight[i] then
+                self.graphColumns[i].setAlpha(0)
+                graph.columnHeight[i] = nil
+            end
+        end
+
+        for column = 1, columns do
+            local index = startColumn + column - 1
+            local value = values[column]
+            if value == nil then
+                if graph.columnHeight[index] then
+                    self.graphColumns[index].setAlpha(0)
+                    graph.columnHeight[index] = nil
+                end
+            else
+                graph.columnX0[index] = graph.plotX + (index - 1) * step
+                graph.columnX1[index] = graph.columnX0[index] + step
+                paintColumn(index, heightFor(value))
+            end
+        end
+        graph.visibleColumns = columns
+        graph.laidOutStart = startColumn
+    else
+        for column = 1, columns do
+            local index = startColumn + column - 1
+            local value = values[column]
+            if value == nil then
+                if graph.columnHeight[index] then
+                    self.graphColumns[index].setAlpha(0)
+                    graph.columnHeight[index] = nil
+                end
+            else
+                local height = heightFor(value)
+                if graph.columnHeight[index] == nil then
+                    paintColumn(index, height)
+                elseif graph.columnHeight[index] ~= height then
+                    local y0 = bottom - height
+                    local object = self.graphColumns[index]
+                    object.setVertex(1, graph.columnX0[index], y0)
+                    object.setVertex(4, graph.columnX1[index], y0)
+                    object.setColor(screen.toRGB(screen.blend(muted, self.theme.primary,
+                        height / graph.plotHeight)))
+                    graph.columnHeight[index] = height
+                end
+            end
         end
     end
-    if visible < GRAPH_COLUMNS then hideColumns(visible + 1) end
 
-    local labelRight = self.x + (GRAPH_LABEL_X + GRAPH_LABEL_WIDTH) * self.scale
-    local labelWidth = GRAPH_LABEL_SCALE * self.scale * 6
-    local labelTop = self.y + GRAPH_PLOT_Y * self.scale
-    local function setLabel(label, value, y)
-        label.setText(value)
-        label.setPosition(labelRight - text.len(value) * labelWidth, y)
-    end
-    setLabel(graph.maxLabel, format.compact(max), labelTop)
-    setLabel(graph.minLabel, format.compact(min), labelTop + graph.plotHeight - 5 * self.scale)
+    setBounds(format.compact(max), format.compact(min))
 end
 
-function panel:update(view, cycling)
+function panel:update(view, cycling, now)
     if not view then return end
 
     local fraction = view.percent
@@ -487,7 +604,7 @@ function panel:update(view, cycling)
     self.dynamic.state.setText(state)
     self.dynamic.state.setColor(screen.toRGB(STATE_COLORS[view.state] or palette.muted))
 
-    self:updateGraph(view)
+    self:updateGraph(view, now)
 end
 
 function panel:remove()

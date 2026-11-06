@@ -42,6 +42,12 @@ function ar.rectangle(glasses, v1, width, height, color, alpha)
     return rect
 end
 
+function ar.quad(glasses)
+    local quad = glasses.addQuad()
+    quad.setAlpha(0)
+    return quad
+end
+
 function ar.text(glasses, str, v1, color, scale, alpha)
     scale = scale or 1
     local text = glasses.addTextLabel()
